@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
+#![feature(type_alias_impl_trait)]
 
 mod protocol;
 mod datatypes;
@@ -14,8 +15,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port: u16 = if arguments.len() <= 1 { 25565 }
         else { arguments[1].parse().expect("failed to parse port") };
     
-    let server = TcpListener::bind("127.0.0.1:".to_string() + port.to_string().as_str()).await?;
+    let server = TcpListener::bind("0.0.0.0:".to_string() + port.to_string().as_str()).await?;
     println!("server is listening on port {}", port);
+
+    
 
     loop {
         _ = match server.accept().await {

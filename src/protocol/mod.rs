@@ -1,7 +1,9 @@
-use tokio::{io::AsyncReadExt, net::{tcp::{OwnedReadHalf, OwnedWriteHalf}, TcpStream}};
+mod initialisation;
+
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, tcp::{OwnedReadHalf, OwnedWriteHalf}}};
 use core::net::SocketAddr;
 
-use crate::datatypes::{StringBuffer, VarInt};
+use crate::{datatypes::{StringBuffer, VarInt}, protocol::initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE};
 
 #[derive(Debug)]
 enum RuntimeError {
@@ -13,9 +15,11 @@ enum RuntimeError {
 
 #[derive(PartialEq, Eq)]
 enum States {
-    HandShake = 0,
-    Status = 1,
-    Login = 2,
+    HandShake,
+    Status,
+    Login,
+    Configuration,
+    Play,
 }
 
 struct ProtocolHandler {
@@ -38,25 +42,35 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
 
         loop {
             let length = match VarInt::decode_packet_length(&mut this.reader).await {
-                Ok(value) => value,
-                Err(error) => { 
+                Ok(value) => if value == 0 {
+                    _ = this.writer.shutdown().await;
+                    return;
+                } else { value },
+                Err(error) => {
                     eprintln!("error decoding packet length, client disconnected"); 
-                    return; 
+                    _ = this.writer.shutdown().await;
+                    return;
                 }
             };
 
             let mut buffer = vec![0u8; length as usize];
             _ = match this.reader.read_exact(&mut buffer).await {
                 Ok(0) => return,
-                Ok(n) => n,
+                Ok(n) => if n <= (2 ^ 20) {n} else {
+                    eprintln!("packet too large, client disconnected"); 
+                    _ = this.writer.shutdown().await;
+                    return;
+                } ,
                 Err(error) => {
                     eprintln!("error getting packet, client disconnected"); 
-                    return;                    
+                    _ = this.writer.shutdown().await;
+                    return;
                 }
             };
 
-            if let Some(err) = handle_packet(&mut this, &buffer) {
+            if let Some(err) = handle_packet(&mut this, &buffer).await {
                 eprintln!("runtime error handling packet: {:?}, client disconnected.", err);
+                _ = this.writer.shutdown().await;
                 return;
             };
         }
@@ -64,39 +78,46 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
     })
 }
 
-fn handle_packet(this: &mut ProtocolHandler, packet: &Vec<u8>) -> Option<RuntimeError> {
+async fn handle_packet(this: &mut ProtocolHandler, packet: &Vec<u8>) -> Option<RuntimeError> {
     println!("got new packet: {:?}", packet);
+
+    let mut error: Option<RuntimeError> = None;
     let protocol = packet[0];
+    if this.status == States::HandShake { return handle_handshake(this, packet, protocol); }
+    else if this.status == States::Status {
+        error = match SERVER_BOUND_PACKETS_INSTANCE.status.get(&protocol) {
+        Some(func) => func(packet, this).await,
+        None => None
+    } }
 
-    if this.status == States::HandShake {
-        if !protocol == 0 { return Some(RuntimeError::IncorrectProtocol) };
+    error
+}
 
-        let protocol_version_raw = match VarInt(&packet).decode(1) {
-            Ok(value) => value,
-            Err(error) => return Some(RuntimeError::DecodeError)
-        };
-        this.protocol_version = protocol_version_raw.value;
+fn handle_handshake(this: &mut ProtocolHandler, packet: &Vec<u8>, protocol: u8) -> Option<RuntimeError> {
+    if !protocol == 0 { return Some(RuntimeError::IncorrectProtocol) };
 
-        let mut offset = match StringBuffer(&packet).decode(protocol_version_raw.offset) {
-            Ok(value) => value.offset,
-            Err(error) => return Some(RuntimeError::DecodeError)
-        };
-        offset += 2;
+    let protocol_version_raw = match VarInt(&packet).decode(1) {
+        Ok(value) => value,
+        Err(error) => return Some(RuntimeError::DecodeError)
+    };
+    this.protocol_version = protocol_version_raw.value;
 
-        let intent = match VarInt(&packet).decode(offset) {
-            Ok(value) => value.value,
-            Err(error) => return Some(RuntimeError::DecodeError)
-        };
+    let mut offset = match StringBuffer(&packet).decode(protocol_version_raw.offset) {
+        Ok(value) => value.offset,
+        Err(error) => return Some(RuntimeError::DecodeError)
+    };
+    offset += 2;
 
-        match intent {
-            0 => this.status = States::Status,
-            1 => this.status = States::Login,
-            _ => return Some(RuntimeError::IncorrectIntent) 
-        }
+    let intent = match VarInt(&packet).decode(offset) {
+        Ok(value) => value.value,
+        Err(error) => return Some(RuntimeError::DecodeError)
+    };
 
-        return None;
-    }
+    match intent {
+        1 => this.status = States::Status,
+        2 => this.status = States::Login,
+        _ => return Some(RuntimeError::IncorrectIntent) 
+    };
 
     None
 }
-

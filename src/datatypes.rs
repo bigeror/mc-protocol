@@ -1,4 +1,5 @@
 use core::str;
+use std::io::ErrorKind;
 
 use tokio::{io::AsyncReadExt, net::tcp::OwnedReadHalf};
 
@@ -48,14 +49,15 @@ impl<'a> VarInt<'a> {
         Ok(DecodeResult { value: result, offset })
     }
 
-    pub async fn decode_packet_length(reader: &mut OwnedReadHalf) -> Result<u64, DatatypeError> {
+    // on reading end it returns Ok(0), which is impossible to get otherwise in packet length.
+    pub async fn decode_packet_length(reader: &mut OwnedReadHalf) -> Result<u64, DatatypeError> { 
         let mut position: u64 = 0;
         let mut result: u64 = 0;
 
         loop {
             let current_byte = match reader.read_u8().await {
                 Ok(value) => value,
-                Err(error) => return Err(DatatypeError::StreamError)
+                Err(error) => if error.kind() == ErrorKind::UnexpectedEof { return Ok(0) } else {return Err(DatatypeError::StreamError)}
             };
             result = result | (((current_byte & 0x7F) as u64) << position);
             if (current_byte & 0x80) == 0 { break };
