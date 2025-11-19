@@ -24,22 +24,28 @@ impl ServerBoundPackets {
     }
 }
 
+macro_rules! formalise {
+    (|$arg1:pat_param, $arg2:pat_param| $body:block) => {Arc::new(|_packet, _handler| {
+        Box::pin((async |$arg1 : &Vec<u8>, $arg2 : &mut ProtocolHandler| $body)(_packet, _handler)) as BoxedFuture
+    })};
+}
+
 pub static SERVER_BOUND_PACKETS_INSTANCE: LazyLock<ServerBoundPackets> = LazyLock::new(ServerBoundPackets::new);
 
 fn status_responses() -> Responses {
     let mut responses: Responses = HashMap::new();
 
-    responses.insert(0x00, Arc::new(|_packet, _handler| {Box::pin((async |packet: &Vec<u8>, handler: &mut ProtocolHandler| {
+    responses.insert(0x00, formalise!(|packet, handler| {
         let mut response = (CLIENT_BOUND_PACKETS.status.status_response)();
-        println!("sent status response: {:?}", response);
         _ = handler.writer.write_all(&mut response).await;
         None
-    })(_packet, _handler)) as BoxedFuture}));
+    }));
 
-    responses.insert(0x01, Arc::new(|_packet, _handler| {Box::pin((async |packet: &Vec<u8>, handler: &ProtocolHandler| {
-        println!("0x01");
+    responses.insert(0x01, formalise!(|packet, handler| {
+        let mut response = (CLIENT_BOUND_PACKETS.status.ping_response)(packet);
+        _ = handler.writer.write_all(&mut response).await;
         None
-    })(_packet, _handler)) as BoxedFuture}));
+    }));
 
     responses
 }

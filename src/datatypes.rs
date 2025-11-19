@@ -23,9 +23,12 @@ impl<'a> VarInt<'a> {
         let mut output: Vec<u8> = Vec::new();
 
         while (value & !0x07) != 0 {
+            let test = value & 0x7F;
             output.push(((value & 0x7F) | 0x80) as u8);
-            value = value >> 7
+            let test = value & 0x7f;
+            value = value / 128
         }
+        output.push(value as u8);
 
         Ok(output)
     }

@@ -18,8 +18,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server = TcpListener::bind("0.0.0.0:".to_string() + port.to_string().as_str()).await?;
     println!("server is listening on port {}", port);
 
-    
-
     loop {
         _ = match server.accept().await {
             Ok((socket, addr)) => handler(socket, addr),

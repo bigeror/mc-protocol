@@ -79,8 +79,6 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
 }
 
 async fn handle_packet(this: &mut ProtocolHandler, packet: &Vec<u8>) -> Option<RuntimeError> {
-    println!("got new packet: {:?}", packet);
-
     let mut error: Option<RuntimeError> = None;
     let protocol = packet[0];
     if this.status == States::HandShake { return handle_handshake(this, packet, protocol); }
