@@ -1,2 +1,2 @@
-pub mod serverbound;
 pub mod clientbound;
+pub mod serverbound;
