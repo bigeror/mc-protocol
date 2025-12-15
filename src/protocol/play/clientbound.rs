@@ -1,6 +1,6 @@
-use std::sync::{Arc, LazyLock};
+use std::{sync::{Arc, LazyLock}};
 
-use crate::{concat_buffer, create_packet_collection, protocol::{datatypes::{Vector2, Vector3}}};
+use crate::{concat_buffer, create_packet_collection, protocol::datatypes::{Vector2, Vector3}};
 
 create_packet_collection!(PlayClientBound,
     login: | | {Ok(concat_buffer!{
@@ -105,6 +105,43 @@ create_packet_collection!(PlayClientBound,
 
     aknowledge_block_change: |id: i32| {Ok(concat_buffer!(byte 0x04, varint id))},
     block_update: |id: i32, position: Vector3<i32>| {Ok(concat_buffer!(byte 0x08, pos position, varint id))},
+
+    summon_entity: |id: i32, uuid: Arc<str>, entity_type: i32, position: Vector3<f64>, rotation: Vector2<f64>, data: i32, velocity: Vector3<f64>| {Ok(concat_buffer!(
+        byte 0x01,
+        uuid &uuid,
+        varint entity_type,
+        double position.x,
+        double position.y,
+        double position.z,
+        byte ((rotation.x / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        byte ((rotation.y / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        byte ((rotation.y / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        varint data,
+        short (velocity.x * 8000.0) as i16,
+        short (velocity.y * 8000.0) as i16,
+        short (velocity.z * 8000.0) as i16,
+    ))},
+
+    remove_entity: |ids: Vec<i32>| {
+        let mut ids_buffer = Vec::new();
+        for id in ids {ids_buffer.extend(concat_buffer!(varint id))}
+        Ok(concat_buffer!(
+            byte 0x46,
+            varint ids_buffer.len() as i32,
+            buf ids_buffer,
+        )
+    )},
+
+    update_entity_position_rotation: |id: i32, delta_position: Vector3<f64>, rotation: Vector2<f64>, on_ground: bool| {Ok(concat_buffer!(
+        byte 0x2f,
+        varint id,
+        short (delta_position.x * 4096.0) as i16,
+        short (delta_position.y * 4096.0) as i16,
+        short (delta_position.z * 4096.0) as i16,
+        byte ((rotation.x / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        byte ((rotation.y / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        byte if on_ground {1} else {0},
+    ))},
 );
 
 pub static CLIENT_BOUND_PACKETS: LazyLock<PlayClientBound> = LazyLock::new(PlayClientBound::init);
