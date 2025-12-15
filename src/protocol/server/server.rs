@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock, Mutex}};
 
-use futures::{SinkExt, channel::mpsc::UnboundedSender};
+use tokio::sync::mpsc::UnboundedSender;
 
 pub struct Server {
     // uuid, username
@@ -11,7 +11,7 @@ impl Server {
         players: HashMap::new()
     }}
     pub fn send_to_players(&mut self, packet: Vec<u8>, filter: Option<(&Arc<str>, &Arc<str>)>) {
-        self.players.iter().for_each(|((uuid, username), mut writer)| {
+        self.players.iter().for_each(|((uuid, username), writer)| {
             if Some((uuid, username)) == filter {return}
             _ = writer.send(packet.clone());
         });

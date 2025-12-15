@@ -55,7 +55,7 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
                 let message = format!("{} left the game!", player.username);
                 server.send_to_players((CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
                     "text": message,
-                    "color": "gold",
+                    "color": "yellow",
                 }).write_unnamed().to_vec(), false).unwrap(), None);
                 println!("{} [{}] disconnected", player.username, player.uuid);
             },

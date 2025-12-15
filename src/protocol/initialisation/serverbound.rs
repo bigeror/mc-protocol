@@ -1,11 +1,12 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock}};
 use rand::random;
+use crab_nbt::nbt;
 
 use crate::{
     datatypes::{StringBuffer, UUID}, protocol::{Player, RuntimeError, States, 
         datatypes::{Responses, Vector2, Vector3}, 
         initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
-        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY
+        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::SERVER
     }, try_err, try_option_err
 };
 
@@ -124,7 +125,7 @@ fn configuration_responses() -> Responses {
 
             let response = [
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.login)()),
-                try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(player.uuid, player.username)),
+                try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(player.clone().uuid, player.clone().username)),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
                     Vector3 { x: 0.0, y: 128.0, z: 0.0 },
@@ -141,6 +142,15 @@ fn configuration_responses() -> Responses {
                 _ = handler.writer.send(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y })));
             }}
             _ = handler.writer.send(try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)));
+
+            let mut server = SERVER.lock().unwrap();
+            server.players.insert((player.clone().uuid, player.clone().username), handler.writer.clone());
+
+            let join_message = format!("{} joined the game!", player.username);
+            server.send_to_players(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_system_message)(nbt!("", {
+                "text": join_message,
+                "color": "yellow",
+            }).write_unnamed().to_vec(), false)), None);
 
             handler.status = States::Play;
             None
