@@ -1,6 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
-use crate::{concat_buffer, create_packet_collection, protocol::{datatypes::{Vector2, Vector3}, server::world::WORLD}};
+use crate::{concat_buffer, create_packet_collection, protocol::{datatypes::{Vector2, Vector3}}};
 
 create_packet_collection!(PlayClientBound,
     login: | | {Ok(concat_buffer!{
@@ -73,28 +73,11 @@ create_packet_collection!(PlayClientBound,
     send_filled_chunk: |position: Vector2<i32>| {
         let mut sections_data = Vec::new();
         for i in 0..24 {
-            let mut world = WORLD.lock().unwrap();
-            let section = world.get_section(Vector3 { x: position.x, y: i, z: position.y });
-
             sections_data.extend(concat_buffer!(
-                ushort section.block_count as u16, // blocks in section
-                byte 8, // bits per entry
-                varint section.palette.len() as i32,
-                buf {
-                    let mut palette_data = Vec::new();
-                    for j in section.palette {
-                        palette_data.extend(concat_buffer!(varint j));
-                    }
-                    palette_data
-                }, // palette
-                buf {
-                    let mut section_data = Vec::new();
-                    for j in section.block_data {
-                        section_data.extend(vec![j as u8]);
-                    }
-                    section_data
-                }, // block data
-                byte 0, byte 0, // biome data
+                ushort 4096,
+                byte 0,
+                varint if i >= 12 {0} else {1},
+                byte 0, byte 0,
             ));
         }
 

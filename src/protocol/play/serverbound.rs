@@ -5,10 +5,11 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use tokio::time;
 
+#[allow(unused_imports)]
 use crate::datatypes::{Float, Long, Position, StringBuffer, VarInt};
-use crate::protocol::datatypes::Vector3;
+// use crate::protocol::datatypes::Vector3;
 use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
-use crate::protocol::server::world::WORLD;
+// use crate::protocol::server::world::WORLD;
 use crate::{
     protocol::{datatypes::{Responses, RuntimeError}}, try_err, try_option_err
 };
@@ -59,62 +60,62 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         }
     );
 
-    responses.insert(
-        0x28, 
-        |packet, handler| {
-            let status = try_err!(VarInt(packet).decode(1));
-            let position = try_err!(Position(packet).decode(status.offset));
-            let sequence = try_err!(VarInt(packet).decode(position.offset + 1)).value;
+    // responses.insert(
+    //     0x28, 
+    //     |packet, handler| {
+    //         let status = try_err!(VarInt(packet).decode(1));
+    //         let position = try_err!(Position(packet).decode(status.offset));
+    //         let sequence = try_err!(VarInt(packet).decode(position.offset + 1)).value;
+    //
+    //         let mut world = WORLD.lock().unwrap();
+    //         world.replace_block(position.value, 0);
+    //
+    //         let response = [
+    //             try_err!((CLIENT_BOUND_PACKETS.block_update)(0, position.value)),
+    //             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
+    //         ].concat();
+    //         _ = handler.writer.send(response);
+    //         None
+    //     }
+    // );
 
-            let mut world = WORLD.lock().unwrap();
-            world.replace_block(position.value, 0);
-
-            let response = [
-                try_err!((CLIENT_BOUND_PACKETS.block_update)(0, position.value)),
-                try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
-            ].concat();
-            _ = handler.writer.send(response);
-            None
-        }
-    );
-
-    responses.insert(
-        0x3F,
-        |packet, handler| {
-            let hand = try_err!(VarInt(packet).decode(1));
-            let location = try_err!(Position(packet).decode(hand.offset)).value;
-            let face = try_err!(VarInt(packet).decode(hand.offset + 8));
-            let cursor = Vector3 {
-                x: try_err!(Float(packet).decode(face.offset)).value,
-                y: try_err!(Float(packet).decode(face.offset + 4)).value,
-                z: try_err!(Float(packet).decode(face.offset + 8)).value,
-            };
-            let inside_block = packet[face.offset as usize + 12];
-            let world_border_hit = packet[face.offset as usize + 13];
-            let sequence = try_err!(VarInt(packet).decode(face.offset + 14)).value;
-
-            let pos_offset = [
-                Vector3 {x:0, y:-1, z:0},
-                Vector3 {x:0, y:1, z:0},
-                Vector3 {x:0, y:0, z:-1},
-                Vector3 {x:0, y:0, z:1},
-                Vector3 {x:-1, y:0, z:0},
-                Vector3 {x:1, y:0, z:0},
-            ][face.value as usize];
-            let actual_pos = Vector3::add(location, pos_offset);
-
-            let mut world = WORLD.lock().unwrap();
-            world.replace_block(actual_pos, 1);
-
-            let response = [
-                try_err!((CLIENT_BOUND_PACKETS.block_update)(1, actual_pos)),
-                try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
-            ].concat();
-
-            _ = handler.writer.send(response);
-            None
-        }
-    );
+    // responses.insert(
+    //     0x3F,
+    //     |packet, handler| {
+    //         let hand = try_err!(VarInt(packet).decode(1));
+    //         let location = try_err!(Position(packet).decode(hand.offset)).value;
+    //         let face = try_err!(VarInt(packet).decode(hand.offset + 8));
+    //         let cursor = Vector3 {
+    //             x: try_err!(Float(packet).decode(face.offset)).value,
+    //             y: try_err!(Float(packet).decode(face.offset + 4)).value,
+    //             z: try_err!(Float(packet).decode(face.offset + 8)).value,
+    //         };
+    //         let inside_block = packet[face.offset as usize + 12];
+    //         let world_border_hit = packet[face.offset as usize + 13];
+    //         let sequence = try_err!(VarInt(packet).decode(face.offset + 14)).value;
+    //
+    //         let pos_offset = [
+    //             Vector3 {x:0, y:-1, z:0},
+    //             Vector3 {x:0, y:1, z:0},
+    //             Vector3 {x:0, y:0, z:-1},
+    //             Vector3 {x:0, y:0, z:1},
+    //             Vector3 {x:-1, y:0, z:0},
+    //             Vector3 {x:1, y:0, z:0},
+    //         ][face.value as usize];
+    //         let actual_pos = Vector3::add(location, pos_offset);
+    //
+    //         let mut world = WORLD.lock().unwrap();
+    //         world.replace_block(actual_pos, 1);
+    //
+    //         let response = [
+    //             try_err!((CLIENT_BOUND_PACKETS.block_update)(1, actual_pos)),
+    //             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
+    //         ].concat();
+    //
+    //         _ = handler.writer.send(response);
+    //         None
+    //     }
+    // );
 
     responses
 });

@@ -18,7 +18,10 @@ use crate::{
     protocol::{
         datatypes::{
             Player, ProtocolHandler, RuntimeError, States
-        }, initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE as SERVER_BOUND_PACKETS_INSTANCE_INIT, play::{clientbound::CLIENT_BOUND_PACKETS, serverbound::SERVERBOUND_PACKET_INSTANCE}, server::server::SERVER
+        },
+        initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE as SERVER_BOUND_PACKETS_INSTANCE_INIT,
+        play::{clientbound::CLIENT_BOUND_PACKETS, serverbound::SERVERBOUND_PACKET_INSTANCE},
+        server::server::SERVER
     },
 };
 
