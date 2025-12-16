@@ -9,8 +9,7 @@ use std::panic::AssertUnwindSafe;
 use crab_nbt::nbt;
 use futures::FutureExt;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt}, 
-    net::{TcpStream, tcp::OwnedWriteHalf}, sync::mpsc,
+    io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, tcp::OwnedWriteHalf}, sync::mpsc
 };
 
 use crate::{
@@ -34,6 +33,7 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
             writer: setup_writer(writer).await,
             protocol_version: 0,
             player: None,
+            game: None,
         };
 
         let result = AssertUnwindSafe(protocol_handler(address, &mut this))
@@ -61,6 +61,9 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
             },
             (_, true) => panic!("Got unexpected state: handler is in configuration / play but no player information."),
             _ => ()
+        };
+        if let Some(game) = this.game {
+            tokio::spawn(async move { game.lock().await.stop = true });
         };
         _ = this.writer.send([0].into());
         return;

@@ -153,6 +153,22 @@ create_packet_collection!(PlayClientBound,
             output
         },
     ))},
+
+    particle: |always_visible: bool, position: Vector3<f64>, offset: Vector3<f32>, max_speed: f32, count: i32, id: i32, data: Vec<u8>| {Ok(concat_buffer!(
+        byte 0x29,
+        byte 1,
+        byte always_visible as u8,
+        double position.x,
+        double position.y,
+        double position.z,
+        float offset.x,
+        float offset.y,
+        float offset.z,
+        float max_speed,
+        int count,
+        varint id,
+        buf data,
+    ))},
 );
 
 pub static CLIENT_BOUND_PACKETS: LazyLock<PlayClientBound> = LazyLock::new(PlayClientBound::init);

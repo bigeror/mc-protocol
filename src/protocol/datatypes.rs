@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::Arc};
 
-use tokio::{net::tcp::OwnedReadHalf, sync::mpsc};
+use tokio::{net::tcp::OwnedReadHalf, sync::{Mutex, mpsc}};
 
-use crate::datatypes::{DatatypeError, VarInt};
+use crate::{datatypes::{DatatypeError, VarInt}, protocol::server::player_game::Game};
 
 #[derive(Debug)]
 pub enum PacketCreateError {
@@ -48,13 +48,15 @@ pub struct ProtocolHandler {
     pub writer: mpsc::UnboundedSender<Vec<u8>>,
     pub protocol_version: i32,
     pub player: Option<Player>,
+    pub game: Option<Arc<Mutex<Game>>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Player {
     pub username: Arc<str>,
     pub uuid: Arc<str>,
-    pub keepalive_num: i64
+    pub keepalive_num: i64,
+    pub rotation: Vector2<f32>,
 }
 
 #[derive(Debug)]

@@ -5,6 +5,7 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use tokio::time;
 
+use crate::datatypes::Double;
 #[allow(unused_imports)]
 use crate::datatypes::{Float, Long, Position, StringBuffer, VarInt};
 use crate::protocol::datatypes::{Vector2, Vector3};
@@ -58,36 +59,38 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         None
     });
 
-    responses.insert(0x1D, |packet, handler| {
-        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
-        _ = handler.writer.send(response);
-
-        None
-    });
-    
     responses.insert(0x1E, |packet, handler| {
-        let yaw = try_err!(Float(packet).decode(25));
-        let pitch = try_err!(Float(packet).decode(yaw.offset));
-        let flags = packet[pitch.offset as usize];
-        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
-        _ = handler.writer.send(response);
+        let player = try_option_err!(handler.player.as_mut());
 
+        let x = try_err!(Double(packet).decode(1));
+        let y = try_err!(Double(packet).decode(x.offset));
+        let z = try_err!(Double(packet).decode(y.offset));
+        let yaw = try_err!(Float(packet).decode(z.offset));
+        let pitch = try_err!(Float(packet).decode(yaw.offset));
+        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
+        if x.value.abs() > 0.2 || (y.value - 128.0).abs() > 0.2 || z.value.abs() > 0.2 || yaw.value != 0.0 || pitch.value != 0.0 {_ = handler.writer.send(response)};
+
+        player.rotation.x += yaw.value * 0.1;
+        player.rotation.y += pitch.value * 0.1;
+        let game = try_option_err!(handler.game.as_mut()).clone();
+        let player_copy = player.clone();
+        tokio::spawn(async move {game.lock().await.player = player_copy});
         None
     });
 
     responses.insert(0x1F, |packet, handler| {
+        let player = try_option_err!(handler.player.as_mut());
+
         let yaw = try_err!(Float(packet).decode(1));
         let pitch = try_err!(Float(packet).decode(yaw.offset));
-        let flags = packet[pitch.offset as usize];
         let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
-        _ = handler.writer.send(response);
+        if yaw.value != 0.0 || pitch.value != 0.0 {_ = handler.writer.send(response)};
 
-        None
-    });
-
-    responses.insert(0x20, |packet, handler| {
-        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
-        _ = handler.writer.send(response);
+        player.rotation.x += yaw.value * 0.1;
+        player.rotation.y += pitch.value * 0.1;
+        let game = try_option_err!(handler.game.as_mut()).clone();
+        let player_copy = player.clone();
+        tokio::spawn(async move {game.lock().await.player = player_copy});
         None
     });
 

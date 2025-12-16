@@ -1,12 +1,13 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock}};
 use rand::random;
 use crab_nbt::nbt;
+use tokio::sync::Mutex;
 
 use crate::{
     datatypes::{StringBuffer, UUID}, protocol::{Player, RuntimeError, States, 
         datatypes::{Responses, Vector2, Vector3}, 
         initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
-        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::SERVER
+        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{player_game::Game, server::SERVER}
     }, try_err, try_option_err
 };
 
@@ -71,6 +72,7 @@ fn login_responses() -> Responses {
                 username: username.clone(),
                 uuid: uuid.clone(),
                 keepalive_num: random(),
+                rotation: Vector2 { x: 0.0, y: 0.0 },
             });
 
             let response = try_err!((CLIENT_BOUND_PACKETS.connect.login_success)(username, uuid));
@@ -152,6 +154,10 @@ fn configuration_responses() -> Responses {
                 "text": join_message,
                 "color": "yellow",
             }).write_unnamed().to_vec(), false)), None);
+
+            let game = Arc::new(Mutex::new(Game::new(player, handler.writer.clone())));
+            Game::start_main_loop(game.clone());
+            handler.game = Some(game);
 
             handler.status = States::Play;
             None
