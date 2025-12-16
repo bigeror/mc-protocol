@@ -121,23 +121,24 @@ fn configuration_responses() -> Responses {
         0x03, 
         |packet, handler| {
             let player = try_option_err!(handler.player.clone());
-            println!("Player {}[{}] joined the game!", player.username, player.uuid);
+            println!("Player {} [{}] joined the game!", player.username, player.uuid);
 
             let response = [
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.login)()),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(player.clone().uuid, player.clone().username)),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)),
-                try_err!((CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
+                try_err!((CLIENT_BOUND_PACKETS_PLAY.teleport_player)(0,
                     Vector3 { x: 0.0, y: 128.0, z: 0.0 },
-                    Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                    Vector3 { x: 0.0, y: 0.0, z: 0.0 },
                     Vector2 { x: 0.0, y: 0.0 },
                     None
                 )),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)),
-                // try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_start)()),
-                try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num))
+                try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)),
+                try_err!((CLIENT_BOUND_PACKETS_PLAY.update_attributes)(vec![(14, 0.0)])), // set gravity to 0.
             ].concat();
             _ = handler.writer.send(response);
+
             for x in -3..3 {for y in -3..3 {
                 _ = handler.writer.send(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y })));
             }}

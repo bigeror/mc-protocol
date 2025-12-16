@@ -5,7 +5,7 @@ use crate::{concat_buffer, create_packet_collection, protocol::datatypes::{Vecto
 create_packet_collection!(PlayClientBound,
     login: | | {Ok(concat_buffer!{
         byte 0x2B,
-        int 1, //Player entity id
+        int 0, //Player entity id
         byte 0, // is hardcore
         byte 1, str "minecraft:overworld", // dimension names
         byte 1, // max players (ignored)
@@ -17,7 +17,7 @@ create_packet_collection!(PlayClientBound,
         byte 0, // dimension type
         str "minecraft:overworld", // dimension name
         long 0, // hashed seed
-        byte 1, // default gamemode
+        byte 0, // default gamemode
         byte 255, // previous gamemode
         byte 0, // debug world
         byte 1, // is flat (visual)
@@ -74,9 +74,9 @@ create_packet_collection!(PlayClientBound,
         let mut sections_data = Vec::new();
         for i in 0..24 {
             sections_data.extend(concat_buffer!(
-                ushort 4096,
+                ushort 0,
                 byte 0,
-                varint if i >= 12 {0} else {1},
+                varint 0,
                 byte 0, byte 0,
             ));
         }
@@ -141,6 +141,17 @@ create_packet_collection!(PlayClientBound,
         byte ((rotation.x / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
         byte ((rotation.y / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
         byte if on_ground {1} else {0},
+    ))},
+
+    update_attributes: |propeties: Vec<(i32, f64)>| {Ok(concat_buffer!(
+        byte 0x7C,
+        varint 0,
+        varint propeties.len() as i32,
+        buf {
+            let mut output = Vec::new();
+            for propety in propeties {output.extend(concat_buffer!(varint propety.0, double propety.1, byte 0))}
+            output
+        },
     ))},
 );
 

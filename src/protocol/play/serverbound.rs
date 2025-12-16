@@ -7,10 +7,9 @@ use tokio::time;
 
 #[allow(unused_imports)]
 use crate::datatypes::{Float, Long, Position, StringBuffer, VarInt};
-// use crate::protocol::datatypes::Vector3;
+use crate::protocol::datatypes::{Vector2, Vector3};
 use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
 use crate::protocol::server::server::SERVER;
-// use crate::protocol::server::world::WORLD;
 use crate::{
     protocol::{datatypes::{Responses, RuntimeError}}, try_err, try_option_err
 };
@@ -42,24 +41,55 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         }
     );
 
-    responses.insert(
-        0x08,
-        |packet, handler| {
-            let message = try_err!(StringBuffer(packet).decode(1)).value;
-            let username = try_option_err!(handler.player.clone()).username.to_string();
+    responses.insert( 0x08,
+    |packet, handler| {
+        let message = try_err!(StringBuffer(packet).decode(1)).value;
+        let username = try_option_err!(handler.player.clone()).username.to_string();
 
-            println!("{} -> {}", username, message);
+        println!("{} -> {}", username, message);
 
-            let response = try_err!((CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
-                "text": username, "extra": [
-                {"text": " | ", "color": "dark_gray"},
-                {"text": message},
-            ]}).write_unnamed().into(), false));
+        let response = try_err!((CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
+            "text": username, "extra": [
+            {"text": " | ", "color": "dark_gray"},
+            {"text": message},
+        ]}).write_unnamed().into(), false));
 
-            SERVER.lock().unwrap().send_to_players(response, None);
-            None
-        }
-    );
+        SERVER.lock().unwrap().send_to_players(response, None);
+        None
+    });
+
+    responses.insert(0x1D, |packet, handler| {
+        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
+        _ = handler.writer.send(response);
+
+        None
+    });
+    
+    responses.insert(0x1E, |packet, handler| {
+        let yaw = try_err!(Float(packet).decode(25));
+        let pitch = try_err!(Float(packet).decode(yaw.offset));
+        let flags = packet[pitch.offset as usize];
+        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
+        _ = handler.writer.send(response);
+
+        None
+    });
+
+    responses.insert(0x1F, |packet, handler| {
+        let yaw = try_err!(Float(packet).decode(1));
+        let pitch = try_err!(Float(packet).decode(yaw.offset));
+        let flags = packet[pitch.offset as usize];
+        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
+        _ = handler.writer.send(response);
+
+        None
+    });
+
+    responses.insert(0x20, |packet, handler| {
+        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
+        _ = handler.writer.send(response);
+        None
+    });
 
     responses
 });
