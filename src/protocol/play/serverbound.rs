@@ -59,6 +59,17 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         None
     });
 
+    responses.insert(0x1D, |packet, handler| {
+        let x = try_err!(Double(packet).decode(1));
+        let y = try_err!(Double(packet).decode(x.offset));
+        let z = try_err!(Double(packet).decode(y.offset));
+
+        let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
+        if x.value.abs() > 0.2 || (y.value - 128.0).abs() > 0.2 || z.value.abs() > 0.2 {_ = handler.writer.send(response)};
+
+        None
+    });
+
     responses.insert(0x1E, |packet, handler| {
         let player = try_option_err!(handler.player.as_mut());
 
