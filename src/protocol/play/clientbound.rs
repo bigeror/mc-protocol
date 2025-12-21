@@ -106,8 +106,9 @@ create_packet_collection!(PlayClientBound,
     aknowledge_block_change: |id: i32| {Ok(concat_buffer!(byte 0x04, varint id))},
     block_update: |id: i32, position: Vector3<i32>| {Ok(concat_buffer!(byte 0x08, pos position, varint id))},
 
-    summon_entity: |id: i32, uuid: Arc<str>, entity_type: i32, position: Vector3<f64>, rotation: Vector2<f64>, data: i32, velocity: Vector3<f64>| {Ok(concat_buffer!(
+    summon_entity: |id: i32, uuid: Arc<str>, entity_type: i32, position: Vector3<f64>, rotation: Vector2<f32>, data: i32, velocity: Vector3<f64>| {Ok(concat_buffer!(
         byte 0x01,
+        varint id,
         uuid &uuid,
         varint entity_type,
         double position.x,
@@ -132,7 +133,7 @@ create_packet_collection!(PlayClientBound,
         )
     )},
 
-    update_entity_position_rotation: |id: i32, delta_position: Vector3<f64>, rotation: Vector2<f64>, on_ground: bool| {Ok(concat_buffer!(
+    update_entity_position_rotation: |id: i32, delta_position: Vector3<f64>, rotation: Vector2<f32>, on_ground: bool| {Ok(concat_buffer!(
         byte 0x2f,
         varint id,
         short (delta_position.x * 4096.0) as i16,
@@ -168,6 +169,49 @@ create_packet_collection!(PlayClientBound,
         int count,
         varint id,
         buf data,
+    ))},
+
+    add_entity_metadata: |entityid: i32, data: Vec<(u8, u8, Vec<u8>)>| {Ok(concat_buffer!(
+        byte 0x5C,
+        varint entityid,
+        buf {
+            let mut output: Vec<u8> = vec![];
+            for (id, val_type, value) in data {
+                output.extend(concat_buffer!(byte id, byte val_type, buf value));
+            }
+            output
+        },
+        byte 0xff
+    ))},
+
+    entity_effect: |eid: i32, effectid: i32, amplifier: i32, duration: i32, flags: u8| {Ok(concat_buffer!(
+        byte 0x7D,
+        varint eid,
+        varint effectid,
+        varint amplifier,
+        varint duration,
+        byte flags,
+    ))},
+
+    set_passengers: |eid: i32, passengers: Vec<i32>| {Ok(concat_buffer!(
+        byte 0x64,
+        varint eid,
+        varint passengers.len() as i32,
+        buf {
+            let mut output = Vec::new();
+            for passenger in passengers {output.extend(concat_buffer!(varint passenger))}
+            output
+        }
+    ))},
+    move_entity: |eid: i32, d_pos: Vector3<f64>, rotation: Vector2<f32>, on_ground: bool| {Ok(concat_buffer!(
+        byte 0x2f,
+        varint eid,
+        short (d_pos.x * 4096.0) as i16,
+        short (d_pos.y * 4096.0) as i16,
+        short (d_pos.z * 4096.0) as i16,
+        byte ((rotation.x / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        byte ((rotation.y / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        byte on_ground as u8
     ))},
 );
 

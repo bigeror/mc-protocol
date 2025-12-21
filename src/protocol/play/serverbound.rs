@@ -8,7 +8,7 @@ use tokio::time;
 use crate::datatypes::Double;
 #[allow(unused_imports)]
 use crate::datatypes::{Float, Long, Position, StringBuffer, VarInt};
-use crate::protocol::datatypes::{Vector2, Vector3};
+use crate::protocol::datatypes::{PlayerInput, Vector2, Vector3};
 use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
 use crate::protocol::server::server::SERVER;
 use crate::{
@@ -65,7 +65,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let z = try_err!(Double(packet).decode(y.offset));
 
         let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
-        if x.value.abs() > 0.2 || (y.value - 128.0).abs() > 0.2 || z.value.abs() > 0.2 {_ = handler.writer.send(response)};
+        if x.value.abs() > 0.1 || (y.value - 128.0).abs() > 0.1 || z.value.abs() > 0.1 {_ = handler.writer.send(response)};
 
         None
     });
@@ -79,10 +79,10 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let yaw = try_err!(Float(packet).decode(z.offset));
         let pitch = try_err!(Float(packet).decode(yaw.offset));
         let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
-        if x.value.abs() > 0.2 || (y.value - 128.0).abs() > 0.2 || z.value.abs() > 0.2 || yaw.value != 0.0 || pitch.value != 0.0 {_ = handler.writer.send(response)};
+        if x.value.abs() > 0.05 || (y.value - 128.0).abs() > 0.1 || z.value.abs() > 0.05 || yaw.value != 0.0 || pitch.value != 0.0 {_ = handler.writer.send(response)};
 
-        player.rotation.x += yaw.value * 0.1;
-        player.rotation.y += pitch.value * 0.1;
+        player.rotation.x = (player.rotation.x - yaw.value * 0.1).clamp(-1.5, 1.5);
+        player.rotation.y = (player.rotation.y - pitch.value * 0.1).clamp(-1.0, 1.0);
         let game = try_option_err!(handler.game.as_mut()).clone();
         let player_copy = player.clone();
         tokio::spawn(async move {game.lock().await.player = player_copy});
@@ -97,11 +97,18 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let response = try_err!((CLIENT_BOUND_PACKETS.teleport_player)(0, Vector3 {x:0.0, y:128.0, z:0.0}, Vector3 {x:0.0, y:0.0, z:0.0}, Vector2 {x:0.0, y:0.0}, None));
         if yaw.value != 0.0 || pitch.value != 0.0 {_ = handler.writer.send(response)};
 
-        player.rotation.x += yaw.value * 0.1;
-        player.rotation.y += pitch.value * 0.1;
+        player.rotation.x = (player.rotation.x - yaw.value * 0.1).clamp(-1.5, 1.5);
+        player.rotation.y = (player.rotation.y - pitch.value * 0.1).clamp(-1.0, 1.0);
         let game = try_option_err!(handler.game.as_mut()).clone();
         let player_copy = player.clone();
         tokio::spawn(async move {game.lock().await.player = player_copy});
+        None
+    });
+
+    responses.insert(0x2A, |packet, handler| {
+        let flags = packet[1];
+        let game = try_option_err!(handler.game.as_mut()).clone();
+        tokio::spawn(async move {game.lock().await.input = PlayerInput::from_flags(flags)});
         None
     });
 

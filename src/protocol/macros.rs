@@ -13,6 +13,9 @@ macro_rules! concat_buffer {
     (_dev, uuid $literal:expr) => {crate::datatypes::UUID::encode($literal)?};
     (_dev, pos $literal:expr) => {crate::datatypes::Position::encode($literal)};
 
+    {unwrap: $($type:tt $literal:expr),+ $(,)?} => {
+        (|| Ok(concat_buffer!($($type $literal),+)) as Result<Vec<u8>, crate::datatypes::DatatypeError>)().unwrap()
+    };
     {$($type:tt $literal:expr),+ $(,)?} => {
         [ $(concat_buffer!(_dev, $type $literal)),+ ].concat()
     };

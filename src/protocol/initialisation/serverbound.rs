@@ -125,7 +125,7 @@ fn configuration_responses() -> Responses {
             let player = try_option_err!(handler.player.clone());
             println!("Player {} [{}] joined the game!", player.username, player.uuid);
 
-            let response = [
+            let mut response = [
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.login)()),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(player.clone().uuid, player.clone().username)),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)),
@@ -138,13 +138,12 @@ fn configuration_responses() -> Responses {
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.update_attributes)(vec![(14, 0.0)])), // set gravity to 0.
+                // try_err!((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(0, player.clone().uuid, 149, Vector3{x:0.0, y:128.0, z:0.0}, Vector2{x:0.0, y:0.0}, 0, Vector3{x:0.0, y:0.0, z:0.0})),
+                try_err!((CLIENT_BOUND_PACKETS_PLAY.entity_effect)(0, 13, 0, -1, 0x04 | 0x02)),
             ].concat();
+             for x in -3..3 {for y in -3..3 { response.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y }))) }}
+            response.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)));
             _ = handler.writer.send(response);
-
-            for x in -3..3 {for y in -3..3 {
-                _ = handler.writer.send(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y })));
-            }}
-            _ = handler.writer.send(try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)));
 
             let mut server = SERVER.lock().unwrap();
             server.players.insert((player.clone().uuid, player.clone().username), handler.writer.clone());
@@ -157,7 +156,7 @@ fn configuration_responses() -> Responses {
 
             let game = Arc::new(Mutex::new(Game::new(player, handler.writer.clone())));
             Game::start_main_loop(game.clone());
-            handler.game = Some(game);
+            handler.game = Some(game.clone());
 
             handler.status = States::Play;
             None
