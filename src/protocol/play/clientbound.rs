@@ -125,10 +125,10 @@ create_packet_collection!(PlayClientBound,
 
     remove_entity: |ids: Vec<i32>| {
         let mut ids_buffer = Vec::new();
-        for id in ids {ids_buffer.extend(concat_buffer!(varint id))}
+        for id in &ids {ids_buffer.extend(concat_buffer!(varint *id))}
         Ok(concat_buffer!(
             byte 0x46,
-            varint ids_buffer.len() as i32,
+            varint ids.len() as i32,
             buf ids_buffer,
         )
     )},
