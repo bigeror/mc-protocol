@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::{Add, Mul}, sync::Arc};
+use std::{collections::HashMap, ops::{Add, Mul, Sub}, process::Output, sync::Arc};
 
 use tokio::{net::tcp::OwnedReadHalf, sync::{Mutex, mpsc}};
 
@@ -108,9 +108,21 @@ impl<T: Add<Output = T>> Add for Vector3<T> {
         Vector3 { x: self.x + other.x, y: self.y + other.y, z: self.z + other.z }
     }
 }
+impl<T: Sub<Output = T>> Sub for Vector3<T> {
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        Vector3 { x: self.x - other.x, y: self.y - other.y, z: self.z - other.z }
+    }
+}
 impl<T> Vector3<T> where T: Mul + Copy {
     pub fn scale(&self, num: T) -> Vector3<<T as Mul>::Output> {
         Vector3 { x: self.x * num, y: self.y * num, z: self.z * num }
+    }
+    pub fn length(&self) -> 
+        <<<T as Mul>::Output as Add>::Output as Add<<T as Mul>::Output>>::Output 
+        where <T as Mul>::Output: Add, <<T as Mul>::Output as Add>::Output: Add<<T as Mul>::Output> 
+    {
+        (self.x * self.x) + (self.y * self.y) + (self.z * self.z)
     }
 }
 
@@ -118,6 +130,26 @@ impl<T> Vector3<T> where T: Mul + Copy {
 pub struct Vector2<T> {
     pub x: T,
     pub y: T,
+}
+impl<T: Add<Output = T>> Add for Vector2<T> {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Vector2 { x: self.x + other.x, y: self.y + other.y }
+    }
+}
+impl<T: Sub<Output = T>> Sub for Vector2<T> {
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        Vector2 { x: self.x - other.x, y: self.y - other.y }
+    }
+}
+impl<T> Vector2<T> where T: Mul + Copy {
+    pub fn scale(&self, num: T) -> Vector2<<T as Mul>::Output> {
+        Vector2 { x: self.x * num, y: self.y * num }
+    }
+    pub fn length(&self) -> <<T as Mul>::Output as Add>::Output where <T as Mul>::Output: Add {
+        (self.x * self.x) + (self.y * self.y)
+    }
 }
 
 pub fn add_length(packet_raw: Result<Vec<u8>, DatatypeError>) -> Result<Vec<u8>, PacketCreateError> {

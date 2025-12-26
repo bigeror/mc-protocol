@@ -57,7 +57,7 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
                     "text": message,
                     "color": "yellow",
                 }).write_unnamed().to_vec(), false).unwrap(), None);
-                println!("{} [{}] disconnected", player.username, player.uuid);
+                println!("Player {} [{}] left the game.", player.username, player.uuid);
             },
             (_, true) => panic!("Got unexpected state: handler is in configuration / play but no player information."),
             _ => ()

@@ -138,8 +138,7 @@ fn configuration_responses() -> Responses {
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)),
                 try_err!((CLIENT_BOUND_PACKETS_PLAY.update_attributes)(vec![(14, 0.0)])), // set gravity to 0.
-                // try_err!((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(0, player.clone().uuid, 149, Vector3{x:0.0, y:128.0, z:0.0}, Vector2{x:0.0, y:0.0}, 0, Vector3{x:0.0, y:0.0, z:0.0})),
-                try_err!((CLIENT_BOUND_PACKETS_PLAY.entity_effect)(0, 13, 0, -1, 0x04 | 0x02)),
+                try_err!((CLIENT_BOUND_PACKETS_PLAY.add_entity_metadata)(0, vec![(0, 0, vec![0x20])]))
             ].concat();
              for x in -3..3 {for y in -3..3 { response.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y }))) }}
             response.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)));
