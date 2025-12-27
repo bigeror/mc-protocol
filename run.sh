@@ -1,1 +1,1 @@
-RUSTFLAGS="--remap-path-prefix=$(pwd)=" cargo run 25566
+cargo --quiet run 25566

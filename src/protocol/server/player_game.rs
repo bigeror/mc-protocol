@@ -13,7 +13,9 @@ pub struct Game {
     latest_entity_id: i32,
     pub stop: bool,
     pub input: PlayerInput,
-    player_position: Vector2<f64>
+    player_position: Vector2<f64>,
+    player_xp: u16,
+    player_health: u16,
 }
 
 #[allow(unused_assignments)]
@@ -27,7 +29,9 @@ impl Game {
             latest_entity_id: 1,
             stop: false,
             input: PlayerInput::empty(),
-            player_position: Vector2 { x: 0.0, y: 0.0 }
+            player_position: Vector2 { x: 0.0, y: 0.0 },
+            player_xp: 0,
+            player_health: 100
         }
     }
 
@@ -37,6 +41,7 @@ impl Game {
             let mut background: Vec<Arc<Mutex<Entity>>> = Vec::new();
             let mut enemies: Vec<Enemy> = Vec::new();
             let mut bullets: Vec<Bullet> = Vec::new();
+            let mut shoot_buffer = false;
 
             {
                 let mut this = this_raw.lock().await;
@@ -84,15 +89,31 @@ impl Game {
                         Vector2 { x: 0.0, y: 0.0 }))
                 }
 
-                if counter == 0 && this.input.jump {
+                if this.input.jump {shoot_buffer = true}
+                if counter == 0 && shoot_buffer {
                     let (pack, entity) = this.summon(Vector3 {x:0.0, y:129.65, z:6.99}, Vector2 {x:0.0, y:0.0}, 70);
                     let entity_clone = entity.clone();
                     let mut entity_lock = entity_clone.lock().await;
-                    response.extend([pack, (CLIENT_BOUND_PACKETS.add_entity_metadata)(
-                        entity_lock.eid, vec![(23, 7, concat_buffer!(unwrap: varint 1, varint 1008, varint 0, varint 0)), (11, 33, concat_buffer!(unwrap: float 0.0, float 0.0, float 0.0)), (8, 1, concat_buffer!(unwrap: varint 1))]
-                    ).unwrap()].concat());
+                    response.extend([pack, (CLIENT_BOUND_PACKETS.add_entity_metadata)(entity_lock.eid, vec![
+                            (23, 7, concat_buffer!(unwrap: varint 1, varint 1008, varint 0, varint 0)),
+                            (11, 33, concat_buffer!(unwrap: float 0.0, float 0.0, float 0.0)),
+                            (8, 1, concat_buffer!(unwrap: varint 1))
+                    ]).unwrap()].concat());
                     bullets.push(Bullet { friendly: true, entity, position: this.player_position, direction: random_range(0.0..360.0) });
+                    shoot_buffer = false
                 };
+
+                if counter == 0 && this.input.sneak {
+                    let (pack, entity) = this.summon(Vector3 {x:0.0, y:129.65, z:6.99}, Vector2 {x:0.0, y:0.0}, 70);
+                    let entity_clone = entity.clone();
+                    let mut entity_lock = entity_clone.lock().await;
+                    response.extend([pack, (CLIENT_BOUND_PACKETS.add_entity_metadata)(entity_lock.eid, vec![
+                            (23, 7, concat_buffer!(unwrap: varint 1, varint 1008, varint 0, varint 0)),
+                            (11, 33, concat_buffer!(unwrap: float 0.0, float 0.0, float 0.0)),
+                            (8, 1, concat_buffer!(unwrap: varint 1))
+                    ]).unwrap()].concat());
+                    enemies.push(Enemy { entity, position: this.player_position, target_offset: Vector2 {x: 0.0, y: 0.0}, health: 0, tick: 0 });
+                }
 
                 let mut bullet_grid: HashMap<(i8, i8), Vec<usize>> = HashMap::new();
                 let mut delete_bullet_indicies: Vec<usize> = Vec::new();
@@ -111,19 +132,35 @@ impl Game {
                     }
 
                     let grid_coordinates = ((new_pos_main.x - this.player_position.x).floor() as i8, (new_pos_main.x - this.player_position.x).floor() as i8);
-                    bullet_grid.entry(grid_coordinates).and_modify(|val| val.push(index)).or_insert(vec![index]);
+                    if value.friendly {_ = bullet_grid.entry(grid_coordinates).and_modify(|val| val.push(index)).or_insert(vec![index])}
                     if !value.friendly && new_pos_main.length() < 0.5 {} // TODO: add player damage
+
                     response.extend(entity.move_entity(new_pos, Vector2 {x:0.0, y:0.0}));
                 }
 
                 for (index, value) in enemies.iter_mut().enumerate() {
                     let mut entity = value.entity.lock().await;
-                    if false {
+                    let grid_coordinates = Vector2 {x: (value.position.x - this.player_position.x).floor() as i8, y: (value.position.x - this.player_position.x).floor() as i8};
+                    let mut is_damaged = false;
+                    let new_pos = Vector3 {x: value.position.x - this.player_position.x, y: value.position.y - this.player_position.y + 129.65, z: 6.98};
+                    response.extend(entity.move_entity(new_pos, Vector2 {x: 0.0, y: 0.0}));
+
+                    for i in 0..9 {
+                        let coord = Vector2 {x: (i as f64 / 3.0).floor() as i8 - 1, y: i % 3 as i8 - 1};
+                        match bullet_grid.get(&((grid_coordinates + coord).x as i8, (grid_coordinates + coord).y as i8)) {
+                            None => continue,
+                            Some(indicies) => {for index in indicies {
+                                let bullet_pos = bullets[*index].position;
+                                if (bullet_pos - value.position).length() < 0.3 {is_damaged = true} // TODO: add entity damage
+                            }}
+                        }
+                    }
+
+                    if is_damaged {
                         response.extend(this.kill(&value.entity, entity.eid));
                         delete_enemy_indicies.insert(0, index);
                         continue;
                     }
-
                 }
 
                 for index in delete_bullet_indicies {_ = bullets.remove(index)}
