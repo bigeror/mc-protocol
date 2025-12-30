@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use rand::{random, random_range};
-use tokio::{sync::{mpsc::UnboundedSender, Mutex}, time::sleep};
+use tokio::{sync::{Mutex, mpsc::UnboundedSender}, time};
 
 use crate::{concat_buffer, datatypes::UUID, protocol::{datatypes::{Player, PlayerInput, Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS}};
 
@@ -42,6 +42,8 @@ impl Game {
             let mut enemies: Vec<Enemy> = Vec::new();
             let mut bullets: Vec<Bullet> = Vec::new();
             let mut shoot_buffer = false;
+            let mut interval = time::interval(Duration::from_millis(50));
+            let mut nearest_enemy_pos: Vector2<f64> = Vector2 { x: 0.0, y: 0.0 };
 
             {
                 let mut this = this_raw.lock().await;
@@ -51,7 +53,7 @@ impl Game {
                 for x in -10..11 {for y in -7..8 {
                     let (spawn_packet, entity) = this.summon(
                         Vector3 { x: 0.0, y: 129.65, z: 7.0 },
-                        Vector2 { x: 0.0, y: 0.0 }, 70
+                        Vector2 { x: 0.0, y: 0.0 }, 70,
                     );
                     background.push(entity.clone());
                     let entity_lock = entity.lock().await;
@@ -64,7 +66,7 @@ impl Game {
             }
 
             loop {
-                sleep(Duration::from_millis(50)).await;
+                interval.tick().await;
                 let mut this = this_raw.lock().await;
                 if (*this).stop == true {return}
 
@@ -90,7 +92,7 @@ impl Game {
                 }
 
                 if this.input.jump {shoot_buffer = true}
-                if counter == 0 && shoot_buffer {
+                if counter % 2 == 0 && shoot_buffer {
                     let (pack, entity) = this.summon(Vector3 {x:0.0, y:129.65, z:6.99}, Vector2 {x:0.0, y:0.0}, 70);
                     let entity_clone = entity.clone();
                     let mut entity_lock = entity_clone.lock().await;
@@ -99,18 +101,22 @@ impl Game {
                             (11, 33, concat_buffer!(unwrap: float 0.0, float 0.0, float 0.0)),
                             (8, 1, concat_buffer!(unwrap: varint 1))
                     ]).unwrap()].concat());
-                    bullets.push(Bullet { friendly: true, entity, position: this.player_position, direction: random_range(0.0..360.0) });
+                    bullets.push(Bullet { friendly: true, entity, position: this.player_position, eid: entity_lock.eid, direction:
+                        if enemies.len() != 0 {f32::atan2((nearest_enemy_pos.y - this.player_position.y) as f32, (nearest_enemy_pos.x - this.player_position.x) as f32)}
+                        else {random_range(0.0..360.0)}
+                    });
                     shoot_buffer = false
                 };
 
-                if counter == 0 && this.input.sneak {
+                if counter % 5 == 0 && this.input.sneak {
                     let (pack, entity) = this.summon(Vector3 {x:0.0, y:129.65, z:6.99}, Vector2 {x:0.0, y:0.0}, 70);
                     let entity_clone = entity.clone();
                     let mut entity_lock = entity_clone.lock().await;
                     response.extend([pack, (CLIENT_BOUND_PACKETS.add_entity_metadata)(entity_lock.eid, vec![
-                            (23, 7, concat_buffer!(unwrap: varint 1, varint 1008, varint 0, varint 0)),
-                            (11, 33, concat_buffer!(unwrap: float 0.0, float 0.0, float 0.0)),
-                            (8, 1, concat_buffer!(unwrap: varint 1))
+                        (23, 7, concat_buffer!(unwrap: varint 1, varint 1008, varint 1, varint 0, varint 7, str &"player")),
+                        (11, 33, concat_buffer!(unwrap: float 0.0, float 0.0, float 0.0)),
+                        (8, 1, concat_buffer!(unwrap: varint 1)),
+                        (16, 1, concat_buffer!(unwrap: varint (15 << 20) | (15 << 4))),
                     ]).unwrap()].concat());
                     enemies.push(Enemy { entity, position: this.player_position, target_offset: Vector2 {x: 0.0, y: 0.0}, health: 0, tick: 0 });
                 }
@@ -138,6 +144,7 @@ impl Game {
                     response.extend(entity.move_entity(new_pos, Vector2 {x:0.0, y:0.0}));
                 }
 
+                nearest_enemy_pos = Vector2 { x: f64::MAX, y: f64::MAX };
                 for (index, value) in enemies.iter_mut().enumerate() {
                     let mut entity = value.entity.lock().await;
                     let grid_coordinates = Vector2 {x: (value.position.x - this.player_position.x).floor() as i8, y: (value.position.x - this.player_position.x).floor() as i8};
@@ -150,8 +157,16 @@ impl Game {
                         match bullet_grid.get(&((grid_coordinates + coord).x as i8, (grid_coordinates + coord).y as i8)) {
                             None => continue,
                             Some(indicies) => {for index in indicies {
-                                let bullet_pos = bullets[*index].position;
-                                if (bullet_pos - value.position).length() < 0.3 {is_damaged = true} // TODO: add entity damage
+                                let bullet = &bullets[*index];
+                                let bullet_pos = bullet.position;
+                                if (bullet_pos - value.position).length() < 0.3 {
+                                    is_damaged = true;
+                                    if !delete_bullet_indicies.contains(index) {
+                                        response.extend(this.kill(&bullet.entity, bullet.eid));
+                                        let delete_index = delete_bullet_indicies.iter().filter(|val| *val > index).collect::<Vec<&usize>>().len();
+                                        delete_bullet_indicies.insert(delete_index, *index);
+                                    }
+                                } // TODO: add entity damage
                             }}
                         }
                     }
@@ -161,6 +176,9 @@ impl Game {
                         delete_enemy_indicies.insert(0, index);
                         continue;
                     }
+
+                    if (value.position - this.player_position).length() < (nearest_enemy_pos - this.player_position).length()
+                        {nearest_enemy_pos = value.position}
                 }
 
                 for index in delete_bullet_indicies {_ = bullets.remove(index)}
@@ -168,7 +186,7 @@ impl Game {
                 _ = this.writer.send(response);
 
                 counter += 1;
-                counter %= 5;
+                counter %= 20 * 60; // reset every minute to prevent overflow
             }
         });
     }
@@ -188,7 +206,6 @@ impl Game {
         self.entity_list.push(entity.clone());
         (response, entity)
     }
-
     pub fn kill(&mut self, entity: &Arc<Mutex<Entity>>, eid: i32) -> Vec<u8> {
         self.entity_list.retain(|_entity| Arc::ptr_eq(_entity, entity));
         (CLIENT_BOUND_PACKETS.remove_entity)(vec![eid]).unwrap()
@@ -201,6 +218,7 @@ pub struct Bullet {
     pub entity: Arc<Mutex<Entity>>,
     pub position: Vector2<f64>,
     pub direction: f32,
+    pub eid: i32,
 }
 
 #[derive(Debug)]
