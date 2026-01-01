@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use tokio::{net::tcp::OwnedReadHalf, sync::mpsc};
 
-use crate::datatypes::{DatatypeError, VarInt};
+use crate::datatypes::{DatatypeError, Packet};
 
 #[derive(Debug)]
 pub enum PacketCreateError {
@@ -30,7 +30,7 @@ impl From<DatatypeError> for RuntimeError {
     fn from(error: DatatypeError) -> Self { Self::DecodeError(error) }
 }
 
-pub type Responses = HashMap<u8, fn(&Vec<u8>, &mut ProtocolHandler) -> Option<RuntimeError>>;
+pub type Responses = HashMap<u8, fn(&mut Packet, &mut ProtocolHandler) -> Option<RuntimeError>>;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum States {
@@ -83,7 +83,7 @@ pub struct Vector2<T> {
 
 pub fn add_length(packet_raw: Result<Vec<u8>, DatatypeError>) -> Result<Vec<u8>, PacketCreateError> {
     let packet = packet_raw?;
-    if let Ok(length) = VarInt::encode(packet.len() as i32) {
+    if let Ok(length) = Packet::encode_varint(packet.len() as i32) {
         return Ok(vec![length, packet].concat());
     }
     Err(PacketCreateError::AddLengthError)

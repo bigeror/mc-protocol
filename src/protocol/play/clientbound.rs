@@ -1,6 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
-use crate::{concat_buffer, create_packet_collection, protocol::{datatypes::{Vector2, Vector3}, server::world::WORLD}};
+use crate::{concat_buffer, create_packet_collection, datatypes::Packet, protocol::{datatypes::{Vector2, Vector3}, server::world::WORLD}};
 
 create_packet_collection!(PlayClientBound,
     login: | | {Ok(concat_buffer!{
@@ -25,7 +25,7 @@ create_packet_collection!(PlayClientBound,
         byte 0, // portal cooldown 
         byte 0, // sea level
         byte 0, // enforce secure chat
-    })},
+    }?.concat())},
 
     player_info_update: |uuid: Arc<str>, username: Arc<str> | {Ok(concat_buffer!{
         byte 0x3F,
@@ -35,19 +35,19 @@ create_packet_collection!(PlayClientBound,
         str &username,
         byte 0,
         byte 1,
-    })},
+    }?.concat())},
 
     game_event: |id: u8, data: f32| {Ok(concat_buffer!(
         byte 0x22,
         byte id,
         float data,
-    ))},
+    )?.concat())},
 
     set_center_chunk: |x: i32, y: i32| {Ok(concat_buffer!(
         byte 0x57,
         varint x,
         varint y,
-    ))},
+    )?.concat())},
     
     teleport_player: |id: i32, position: Vector3<f64>, motion: Vector3<f64>, direction: Vector2<f32>, relative: Option<i32>| {Ok(concat_buffer!(
         byte 0x41,
@@ -64,11 +64,11 @@ create_packet_collection!(PlayClientBound,
             Some(val) => val,
             None => 0
         },
-    ))},
+    )?.concat())},
 
-    chunk_batch_start: | | {Ok(concat_buffer!(byte 0x0C))},
-    chunk_batch_finish: |amount: i32| {Ok(concat_buffer!(byte 0x0B, varint amount))},
-    keepalive: |id: i64| {Ok(concat_buffer!(byte 0x26, long id))},
+    chunk_batch_start: | | {Ok(concat_buffer!(byte 0x0C)?.concat())},
+    chunk_batch_finish: |amount: i32| {Ok(concat_buffer!(byte 0x0B, varint amount)?.concat())},
+    keepalive: |id: i64| {Ok(concat_buffer!(byte 0x26, long id)?.concat())},
 
     send_filled_chunk: |position: Vector2<i32>| {
         let mut sections_data = Vec::new();
@@ -83,7 +83,7 @@ create_packet_collection!(PlayClientBound,
                 buf {
                     let mut palette_data = Vec::new();
                     for j in section.palette {
-                        palette_data.extend(concat_buffer!(varint j));
+                        palette_data.extend(Packet::encode_varint(j)?);
                     }
                     palette_data
                 }, // palette
@@ -95,7 +95,7 @@ create_packet_collection!(PlayClientBound,
                     section_data
                 }, // block data
                 byte 0, byte 0, // biome data
-            ));
+            )?.concat());
         }
 
         Ok(concat_buffer!(
@@ -112,16 +112,16 @@ create_packet_collection!(PlayClientBound,
         byte 0, // empty data
         byte 0, // empty data
         byte 0, // empty data
-    ))},
+    )?.concat())},
 
     send_system_message: |message: Vec<u8>, overlay: bool| {Ok(concat_buffer!(
         byte 0x72,
         buf message,
         byte if overlay {1} else {0},
-    ))},
+    )?.concat())},
 
-    aknowledge_block_change: |id: i32| {Ok(concat_buffer!(byte 0x04, varint id))},
-    block_update: |id: i32, position: Vector3<i32>| {Ok(concat_buffer!(byte 0x08, pos position, varint id))},
+    aknowledge_block_change: |id: i32| {Ok(concat_buffer!(byte 0x04, varint id)?.concat())},
+    block_update: |id: i32, position: Vector3<i32>| {Ok(concat_buffer!(byte 0x08, pos position, varint id)?.concat())},
 );
 
 pub static CLIENT_BOUND_PACKETS: LazyLock<PlayClientBound> = LazyLock::new(PlayClientBound::init);

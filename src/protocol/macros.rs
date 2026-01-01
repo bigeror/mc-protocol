@@ -1,20 +1,20 @@
 #[macro_export]
 macro_rules! concat_buffer {
-    (_dev, byte $literal:expr) => {vec![$literal]};
-    (_dev, buf $literal:expr) => {$literal};
-    (_dev, str $literal:expr) => {crate::datatypes::StringBuffer::encode($literal)?};
-    (_dev, varint $literal:expr) => {crate::datatypes::VarInt::encode($literal)?};
-    (_dev, int $literal:expr) => {crate::datatypes::Int::encode($literal)};
-    (_dev, long $literal:expr) => {crate::datatypes::Long::encode($literal)};
-    (_dev, float $literal:expr) => {crate::datatypes::Float::encode($literal)};
-    (_dev, double $literal:expr) => {crate::datatypes::Double::encode($literal)};
-    (_dev, ushort $literal:expr) => {crate::datatypes::UShort::encode($literal)};
-    (_dev, short $literal:expr) => {crate::datatypes::Short::encode($literal)};
-    (_dev, uuid $literal:expr) => {crate::datatypes::UUID::encode($literal)?};
-    (_dev, pos $literal:expr) => {crate::datatypes::Position::encode($literal)};
+    (_dev, byte $literal:expr) => {Ok(vec![$literal])};
+    (_dev, buf $literal:expr) => {Ok($literal)};
+    (_dev, str $literal:expr) => {crate::datatypes::Packet::encode_string($literal)};
+    (_dev, varint $literal:expr) => {crate::datatypes::Packet::encode_varint($literal)};
+    (_dev, int $literal:expr) => {Ok(crate::datatypes::Packet::encode_int($literal))};
+    (_dev, long $literal:expr) => {Ok(crate::datatypes::Packet::encode_long($literal))};
+    (_dev, float $literal:expr) => {Ok(crate::datatypes::Packet::encode_float($literal))};
+    (_dev, double $literal:expr) => {Ok(crate::datatypes::Packet::encode_double($literal))};
+    (_dev, ushort $literal:expr) => {Ok(crate::datatypes::Packet::encode_ushort($literal))};
+    (_dev, short $literal:expr) => {Ok(crate::datatypes::Packet::encode_short($literal))};
+    (_dev, uuid $literal:expr) => {crate::datatypes::Packet::encode_uuid($literal)};
+    (_dev, pos $literal:expr) => {Ok(crate::datatypes::Packet::encode_position($literal))};
 
     {$($type:tt $literal:expr),+ $(,)?} => {
-        [ $(concat_buffer!(_dev, $type $literal)),+ ].concat()
+        ([ $(concat_buffer!(_dev, $type $literal)),+ ].into_iter().collect::<Result<Vec<Vec<u8>>, crate::datatypes::DatatypeError>>())
     };
 }
 

@@ -14,7 +14,7 @@ use tokio::{
 };
 
 use crate::{
-    datatypes::{StringBuffer, VarInt},
+    datatypes::{Packet, decode_packet_length},
     protocol::{
         datatypes::{
             Player, ProtocolHandler, RuntimeError, States
@@ -54,7 +54,7 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
                     "text": message,
                     "color": "gold",
                 }).write_unnamed().to_vec(), false).unwrap(), None);
-                println!("{} [{}] disconnected", player.username, player.uuid);
+                println!("Player {} [{}] disconnected the game.", player.username, player.uuid);
             },
             (_, true) => panic!("Got unexpected state: handler is in configuration / play but no player information."),
             _ => ()
@@ -83,7 +83,7 @@ async fn setup_writer(mut writer: OwnedWriteHalf) -> mpsc::UnboundedSender<Vec<u
 
 async fn protocol_handler(address: SocketAddr, handler: &mut ProtocolHandler) {
     loop {
-        let length = match VarInt::decode_packet_length(&mut handler.reader).await {
+        let length = match decode_packet_length(&mut handler.reader).await {
             Ok(value) => {
                 if value == 0 { return } 
                 else { value }
@@ -109,16 +109,20 @@ async fn protocol_handler(address: SocketAddr, handler: &mut ProtocolHandler) {
             }
         };
 
-        if let Some(err) = handle_packet(handler, &buffer).await {
+        let mut packet = Packet::new(buffer);
+        if let Some(err) = handle_packet(handler, &mut packet).await {
             eprintln!("runtime error handling packet: {:?}, client disconnected.", err);
             return;
         };
     }
 }
 
-async fn handle_packet(this: &mut ProtocolHandler, packet: &Vec<u8>) -> Option<RuntimeError> {
+async fn handle_packet(this: &mut ProtocolHandler, packet: &mut Packet) -> Option<RuntimeError> {
     let mut error: Option<RuntimeError> = None;
-    let protocol = packet[0];
+    let protocol = match packet.read_u8() {
+        Ok(value) => value,
+        Err(err) => return Some(err.into())
+    };
     if this.status == States::HandShake {
         return handle_handshake(this, packet, protocol);
     } else if this.status == States::Status {
@@ -146,29 +150,22 @@ async fn handle_packet(this: &mut ProtocolHandler, packet: &Vec<u8>) -> Option<R
     error
 }
 
-fn handle_handshake(
-    this: &mut ProtocolHandler,
-    packet: &Vec<u8>,
-    protocol: u8,
-) -> Option<RuntimeError> {
-    if !protocol == 0 {
-        return Some(RuntimeError::IncorrectProtocol);
-    };
+fn handle_handshake( this: &mut ProtocolHandler, packet: &mut Packet, protocol: u8 ) -> Option<RuntimeError> {
+    if !protocol == 0 { return Some(RuntimeError::IncorrectProtocol) };
 
-    let protocol_version_raw = match VarInt(&packet).decode(1) {
+    let protocol_version = match packet.decode_varint() {
         Ok(value) => value,
         Err(error) => return Some(RuntimeError::DecodeError(error)),
     };
-    this.protocol_version = protocol_version_raw.value;
 
-    let mut offset = match StringBuffer(&packet).decode(protocol_version_raw.offset) {
-        Ok(value) => value.offset,
+    let used_ip = match packet.decode_string() {
+        Ok(value) => value,
         Err(error) => return Some(RuntimeError::DecodeError(error)),
     };
-    offset += 2;
+    _ = packet.decode_ushort();
 
-    let intent = match VarInt(&packet).decode(offset) {
-        Ok(value) => value.value,
+    let intent = match packet.decode_varint() {
+        Ok(value) => value,
         Err(error) => return Some(RuntimeError::DecodeError(error)),
     };
 

@@ -12,19 +12,19 @@ pub struct ClientBoundPackets {
 create_packet_collection!(StatusClientBound,
     status_response: | | {
         let status_text = &stringify(object! { version: {
-                name: "§d§lskye fan server! 1.21.8§r",
+                name: "§lBigeror's server! 1.21.8§r",
                 protocol: 772
             },
             players: { max: -1, online: 0, sample: [] },
-            description: { text: "§d§lSkye fan little server written in rust! :D" },
+            description: { text: "§lBigeror's rust server§r" },
             enforcesSecureChat: false
         });
         Ok(concat_buffer!{
             byte 0,
             str status_text,
-        })
+        }?.concat())
     },
-    ping_response: |packet: &Vec<u8>| {Ok(concat_buffer!{ byte 1, buf packet[1..9].to_vec() })},
+    ping_response: |value: i64| {Ok(concat_buffer!{ byte 1, long value }?.concat())},
 );
 
 create_packet_collection!(ConnectClientBound,
@@ -33,19 +33,19 @@ create_packet_collection!(ConnectClientBound,
         uuid &uuid,
         str &username,
         byte 0,
-    })},
+    }?.concat())},
     plugin_message: | | {Ok(concat_buffer!{
         byte 1,
         str "minecraft:brand",
-        str "§d§lskye fan silly server! :D§r",
-    })},
+        str "§lBigeror's rust server! :D§r",
+    }?.concat())},
     send_datapacks: | | {Ok(concat_buffer!{
         byte 0x0E,
         byte 1,
         str "minecraft",
         str "core",
         str "1.21.8",
-    })},
+    }?.concat())},
     registry_data: |id: Arc<str>, values: Arc<[Arc<str>]>| {Ok(concat_buffer!{
         byte 0x07,
         str &id,
@@ -53,11 +53,11 @@ create_packet_collection!(ConnectClientBound,
         buf {
             let mut output: Vec<u8> = vec![];
             for _item in values.to_vec() {
-                output.extend(concat_buffer!(str &_item, byte 0));
+                output.extend(concat_buffer!(str &_item, byte 0)?.concat());
             }
             output
         },
-    })},
+    }?.concat())},
     registry_data_filled: |id: Arc<str>, values: HashMap<Arc<str>, Vec<u8>>| {Ok(concat_buffer!{
         byte 0x07,
         str &id,
@@ -65,12 +65,12 @@ create_packet_collection!(ConnectClientBound,
         buf {
             let mut output: Vec<u8> = vec![];
             for (_item, _value) in values.iter() {
-                output.extend(concat_buffer!(str &_item, byte 1, buf _value.deref().to_vec()));
+                output.extend(concat_buffer!(str &_item, byte 1, buf _value.deref().to_vec())?.concat());
             }
             output
         },
-    })},
-    configuration_finish: | | {Ok(concat_buffer!{byte 0x03})},
+    }?.concat())},
+    configuration_finish: | | {Ok(concat_buffer!{byte 0x03}?.concat())},
 );
 
 pub static CLIENT_BOUND_PACKETS: LazyLock<ClientBoundPackets> = LazyLock::new(|| ClientBoundPackets {
