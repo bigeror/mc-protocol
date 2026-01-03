@@ -22,6 +22,7 @@ pub enum RuntimeError {
     PacketCreateError(PacketCreateError),
     UnexpectedNone,
     IncorrectKeepalive,
+    IncorrectValue,
 }
 impl From<PacketCreateError> for RuntimeError {
     fn from(error: PacketCreateError) -> Self { Self::PacketCreateError(error) }
@@ -54,7 +55,9 @@ pub struct ProtocolHandler {
 pub struct Player {
     pub username: Arc<str>,
     pub uuid: Arc<str>,
-    pub keepalive_num: i64
+    pub keepalive_num: i64,
+    pub hotbar: [i32; 9],
+    pub selected_slot: i16,
 }
 
 #[derive(Debug)]

@@ -2,7 +2,7 @@ mod initialisation;
 mod play;
 mod macros;
 pub mod datatypes;
-mod server;
+pub mod server;
 
 use core::net::SocketAddr;
 use std::panic::AssertUnwindSafe;
@@ -49,10 +49,10 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
                 let mut server = SERVER.lock().unwrap();
                 server.players.remove(&(player.clone().uuid, player.clone().username));
 
-                let message = format!("{} left the game!", player.username);
+                let message = format!("{} left the game.", player.username);
                 server.send_to_players((CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
                     "text": message,
-                    "color": "gold",
+                    "color": "yellow",
                 }).write_unnamed().to_vec(), false).unwrap(), None);
                 println!("Player {} [{}] disconnected the game.", player.username, player.uuid);
             },

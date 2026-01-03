@@ -43,16 +43,20 @@ impl World {
             None => Self::generate_section(chunk_coordinates)
         };
 
-        let replace_id = if section.palette.contains(&to_id) {section.palette.iter().position(|&val| val == to_id).unwrap()}
+        let replace_id =
+            if section.palette.contains(&to_id) {section.palette.iter()
+                .position(|&val| val == to_id).unwrap()}
             else if section.palette.len() < 255 {section.palette.push(to_id); section.palette.len() - 1}
-            else {panic!("too high id")} as u8;
+            else {panic!("too high id")} as u8; // TODO: handle more than 2^4 different ids
 
         section.block_data[block_index as usize] = replace_id;
         _ = self.chunks.insert(chunk_coordinates, section);
     }
     pub fn generate_section(location: Vector3<i32>) -> Box<Section> {
         // simplest possible chunk generation system
-        if location.y >= 12 {Box::new(Section { block_data: [0; 4096], block_count: 4096, palette: DEFAULT_PALETTE.into() })}
+        if location.y >= 12 {Box::new(
+            Section { block_data: [0; 4096], block_count: 4096, palette: DEFAULT_PALETTE.into() }
+        )}
         else {Box::new(Section { block_data: [1; 4096], block_count: 4096, palette: DEFAULT_PALETTE.into() })}
     }
     pub fn get_section(&mut self, location: Vector3<i32>) -> Box<Section> {

@@ -1,11 +1,12 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock}};
+use crab_nbt::nbt;
 use rand::random;
 
 use crate::{
     protocol::{Player, RuntimeError, States, 
         datatypes::{Responses, Vector2, Vector3}, 
         initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
-        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY
+        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::SERVER
     }, try_err, try_option_err
 };
 
@@ -58,6 +59,8 @@ fn login_responses() -> Responses {
             username: username.clone(),
             uuid: uuid.clone(),
             keepalive_num: random(),
+            hotbar: [0; 9],
+            selected_slot: 0,
         });
 
         let response = try_err!((CLIENT_BOUND_PACKETS.connect.login_success)(username, uuid));
@@ -100,7 +103,7 @@ fn configuration_responses() -> Responses {
 
         let response = [
             try_err!((CLIENT_BOUND_PACKETS_PLAY.login)()),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(player.uuid, player.username)),
+            try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(player.uuid.clone(), player.username.clone())),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
                 Vector3 { x: 0.0, y: 128.0, z: 0.0 },
@@ -120,6 +123,14 @@ fn configuration_responses() -> Responses {
             try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
         ].concat();
         _ = handler.writer.send(response);
+        let mut server = SERVER.lock().unwrap();
+        server.players.insert((player.uuid, player.username.clone()), handler.writer.clone());
+
+        let message = format!("{} joined the game!", player.username);
+        server.send_to_players(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_system_message)(nbt!("", {
+            "text": message,
+            "color": "yellow"
+        }).write_unnamed().into(), false)), None);
 
         handler.status = States::Play;
         None

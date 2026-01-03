@@ -102,56 +102,22 @@ impl Packet {
         })
     }
     pub fn decode_int(&mut self) -> Result<i32, DatatypeError> {
-        Ok(i32::from_be_bytes([
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-        ]))
+        Ok(i32::from_be_bytes(*self.read_buf(4)?.as_array().expect("read_buf function worked incorrectly")))
     }
     pub fn decode_long(&mut self) -> Result<i64, DatatypeError> {
-        Ok(i64::from_be_bytes([
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-        ]))
+        Ok(i64::from_be_bytes(*self.read_buf(8)?.as_array().expect("read_buf function worked incorrectly")))
     }
     pub fn decode_float(&mut self) -> Result<f32, DatatypeError> {
-        Ok(f32::from_be_bytes([
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-        ]))
+        Ok(f32::from_be_bytes(*self.read_buf(4)?.as_array().expect("read_buf function worked incorrectly")))
     }
     pub fn decode_double(&mut self) -> Result<f64, DatatypeError> {
-        Ok(f64::from_be_bytes([
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-            self.read_u8()?,
-        ]))
+        Ok(f64::from_be_bytes(*self.read_buf(8)?.as_array().expect("read_buf function worked incorrectly")))
     }
     pub fn decode_short(&mut self) -> Result<i16, DatatypeError> {
-        Ok(i16::from_be_bytes([
-            self.read_u8()?,
-            self.read_u8()?,
-        ]))
+        Ok(i16::from_be_bytes(*self.read_buf(2)?.as_array().expect("read_buf function worked incorrectly")))
     }
     pub fn decode_ushort(&mut self) -> Result<u16, DatatypeError> {
-        Ok(u16::from_be_bytes([
-            self.read_u8()?,
-            self.read_u8()?,
-        ]))
+        Ok(u16::from_be_bytes(*self.read_buf(2)?.as_array().expect("read_buf function worked incorrectly")))
     }
 
     pub fn encode_varint(input: i32) -> Result<Vec<u8>, DatatypeError> {
@@ -174,7 +140,8 @@ impl Packet {
     }
     pub fn encode_uuid(input: &str) -> Result<Vec<u8>, DatatypeError> {
         let re = Regex::new(r"(..?)").unwrap();
-        let output: Result<Vec<u8>, num::ParseIntError> = re.captures_iter(input.replace("-", "").as_str())
+        let output: Result<Vec<u8>, num::ParseIntError> = re
+            .captures_iter(input.replace("-", "").as_str())
             .map(|caps| u8::from_str_radix(&caps[0], 16))
             .collect();
         match output {
