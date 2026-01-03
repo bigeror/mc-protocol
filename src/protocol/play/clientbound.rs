@@ -73,7 +73,7 @@ create_packet_collection!(PlayClientBound,
     send_filled_chunk: |position: Vector2<i32>| {
         let mut sections_data = Vec::new();
         for i in 0..24 {
-            let mut world = WORLD.lock().unwrap();
+            let mut world = WORLD.try_lock().unwrap();
             let section = world.get_section(Vector3 { x: position.x, y: i, z: position.y });
 
             sections_data.extend(concat_buffer!(

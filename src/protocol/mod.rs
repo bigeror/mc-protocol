@@ -46,7 +46,7 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
 
         match (this.player.clone(), this.status == States::Configuration || this.status == States::Play) {
             (Some(player), true) => {
-                let mut server = SERVER.lock().unwrap();
+                let mut server = SERVER.lock().await;
                 server.players.remove(&(player.clone().uuid, player.clone().username));
 
                 let message = format!("{} left the game.", player.username);

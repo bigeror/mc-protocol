@@ -53,7 +53,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             ],
         }).write_unnamed().into(), false));
 
-        SERVER.lock().unwrap().send_to_players(response, None);
+        tokio::spawn(async move {SERVER.lock().await.send_to_players(response, None)});
         None
     });
 
@@ -63,14 +63,17 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let face = try_err!(packet.read_u8());
         let sequence = try_err!(packet.decode_varint());
 
-        let mut world = WORLD.lock().unwrap();
-        world.replace_block(position, 0);
-
         let response = [
             try_err!((CLIENT_BOUND_PACKETS.block_update)(0, position)),
             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
         ].concat();
-        SERVER.lock().unwrap().send_to_players(response, None);
+
+        tokio::spawn(async move {
+            let mut world = WORLD.lock().await;
+            world.replace_block(position, 0);
+            SERVER.lock().await.send_to_players(response, None);
+        });
+
         None
     });
 
@@ -104,15 +107,17 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             None => return None, // if no block is selected we can't place any block.
         };
 
-        let mut world = WORLD.lock().unwrap();
-        world.replace_block(actual_pos, block);
-
         let response = [
             try_err!((CLIENT_BOUND_PACKETS.block_update)(block, actual_pos)),
             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
         ].concat();
 
-        SERVER.lock().unwrap().send_to_players(response, None);
+        tokio::spawn(async move {
+            let mut world = WORLD.lock().await;
+            world.replace_block(actual_pos, block);
+
+            SERVER.lock().await.send_to_players(response, None);
+        });
         None
     });
 

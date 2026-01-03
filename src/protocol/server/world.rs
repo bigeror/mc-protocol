@@ -1,4 +1,5 @@
-use std::{collections::HashMap, sync::{Mutex, LazyLock}};
+use std::{collections::HashMap, sync::LazyLock};
+use tokio::sync::Mutex;
 
 use crate::protocol::datatypes::Vector3;
 

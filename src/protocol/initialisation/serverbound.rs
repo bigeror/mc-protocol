@@ -123,14 +123,20 @@ fn configuration_responses() -> Responses {
             try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
         ].concat();
         _ = handler.writer.send(response);
-        let mut server = SERVER.lock().unwrap();
-        server.players.insert((player.uuid, player.username.clone()), handler.writer.clone());
 
         let message = format!("{} joined the game!", player.username);
-        server.send_to_players(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_system_message)(nbt!("", {
+        let message_bytes = try_err!((CLIENT_BOUND_PACKETS_PLAY.send_system_message)(nbt!("", {
             "text": message,
             "color": "yellow"
-        }).write_unnamed().into(), false)), None);
+        }).write_unnamed().into(), false));
+
+        let writer = handler.writer.clone();
+        tokio::spawn(async move {
+            let mut server = SERVER.lock().await;
+            server.players.insert((player.uuid, player.username), writer);
+
+            server.send_to_players(message_bytes, None);
+        });
 
         handler.status = States::Play;
         None
