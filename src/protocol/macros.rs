@@ -14,7 +14,11 @@ macro_rules! concat_buffer {
     (_dev, pos $literal:expr) => {Ok(crate::datatypes::Packet::encode_position($literal))};
 
     {$($type:tt $literal:expr),+ $(,)?} => {
-        ([ $(concat_buffer!(_dev, $type $literal)),+ ].into_iter().collect::<Result<Vec<Vec<u8>>, crate::datatypes::DatatypeError>>())
+        (
+        [ $(concat_buffer!(_dev, $type $literal)),+ ]
+            .into_iter()
+            .collect::<Result<Vec<Vec<u8>>, crate::datatypes::DatatypeError>>()
+        )
     };
 }
 

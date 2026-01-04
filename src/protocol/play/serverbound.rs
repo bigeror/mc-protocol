@@ -107,16 +107,19 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             None => return None, // if no block is selected we can't place any block.
         };
 
-        let response = [
-            try_err!((CLIENT_BOUND_PACKETS.block_update)(block, actual_pos)),
+        let block_change = try_err!((CLIENT_BOUND_PACKETS.block_update)(block, actual_pos));
+        let filter = (player.uuid.clone(), player.username.clone());
+
+        _ = handler.writer.send([
+            block_change.clone(),
             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
-        ].concat();
+        ].concat());
 
         tokio::spawn(async move {
             let mut world = WORLD.lock().await;
             world.replace_block(actual_pos, block);
 
-            SERVER.lock().await.send_to_players(response, None);
+            SERVER.lock().await.send_to_players(block_change, Some((&filter.0, &filter.1)));
         });
         None
     });

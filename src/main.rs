@@ -12,7 +12,7 @@ use tokio::net::TcpListener;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let arguments: Vec<String> = env::args().collect();
-    let port: u16 = if arguments.len() <= 1 { 25565 } 
+    let port: u16 = if arguments.len() <= 1 { 25565 }
     else { arguments[1].parse().expect("failed to parse port") };
 
     let server = TcpListener::bind("0.0.0.0:".to_string() + port.to_string().as_str()).await?;

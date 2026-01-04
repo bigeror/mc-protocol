@@ -33,8 +33,9 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
             player: None,
         };
 
-        let result = AssertUnwindSafe(protocol_handler(address, &mut this))
-            .catch_unwind().await;
+        let result = AssertUnwindSafe(
+            protocol_handler(address, &mut this) // Catch user specific exceptions so server doesn't crash
+        ).catch_unwind().await;
 
         match result {
             Ok(val) => (),
@@ -65,7 +66,9 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
 }
 
 async fn setup_writer(mut writer: OwnedWriteHalf) -> mpsc::UnboundedSender<Vec<u8>> {
-    let (sender, mut reader) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (sender, mut reader) = 
+        mpsc::unbounded_channel::<Vec<u8>>();
+
     tokio::spawn(async move {
         loop {
             if let Some(mut message) = reader.recv().await {

@@ -6,7 +6,7 @@ use crate::{
     protocol::{Player, RuntimeError, States, 
         datatypes::{Responses, Vector2, Vector3}, 
         initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
-        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::SERVER
+        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{server::SERVER, world::WORLD}
     }, try_err, try_option_err
 };
 
@@ -94,8 +94,7 @@ fn configuration_responses() -> Responses {
             try_err!((CLIENT_BOUND_PACKETS.connect.configuration_finish)()),
         ].concat();
         _ = handler.writer.send(response);
-        None
-    });
+        None });
 
     responses.insert( 0x03, |packet, handler| {
         let player = try_option_err!(handler.player.clone());
@@ -113,13 +112,6 @@ fn configuration_responses() -> Responses {
             )),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)),
-            {
-                let mut output: Vec<u8> = Vec::new();
-                for x in -5..5 {for y in -5..5 {
-                    output.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y })));
-                }}
-                output
-            },
             try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
         ].concat();
         _ = handler.writer.send(response);
@@ -133,9 +125,20 @@ fn configuration_responses() -> Responses {
         let writer = handler.writer.clone();
         tokio::spawn(async move {
             let mut server = SERVER.lock().await;
-            server.players.insert((player.uuid, player.username), writer);
+            server.players.insert((player.uuid, player.username), writer.clone());
 
             server.send_to_players(message_bytes, None);
+
+            let mut world = WORLD.lock().await;
+            let mut output: Vec<u8> = Vec::new();
+            for x in -5..5 {for y in -5..5 {
+                output.extend(match (CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y }, &mut world) {
+                    Ok(val) => val,
+                    Err(err) => {println!("{:?}", err); continue}
+                });
+            }}
+            _ = writer.send(output);
+            drop(world);
         });
 
         handler.status = States::Play;

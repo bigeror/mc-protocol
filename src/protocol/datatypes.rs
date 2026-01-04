@@ -8,6 +8,7 @@ use crate::datatypes::{DatatypeError, Packet};
 pub enum PacketCreateError {
     DatatypeError(DatatypeError),
     AddLengthError,
+    ArcAsMutError,
 }
 impl From<DatatypeError> for PacketCreateError {
     fn from(err: DatatypeError) -> Self { Self::DatatypeError(err) }
