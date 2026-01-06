@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::Add, sync::Arc};
 
 use tokio::{net::tcp::OwnedReadHalf, sync::mpsc};
 
@@ -73,9 +73,10 @@ pub struct Vector3<T> {
     pub y: T,
     pub z: T,
 }
-impl Vector3<i32> {
-    pub fn add(a: Vector3<i32>, b: Vector3<i32>) -> Vector3<i32> {
-        Vector3 { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }
+impl<T: Add<Output = T>> Add for Vector3<T> {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Vector3 { x: self.x + other.x, y: self.y + other.y, z: self.z + other.z }
     }
 }
 

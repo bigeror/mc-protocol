@@ -7,6 +7,7 @@ use tokio::time;
 
 use crate::protocol::datatypes::Vector3;
 use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
+use crate::protocol::play::place_block::get_block_id;
 use crate::protocol::server::mapping::MAP;
 use crate::protocol::server::server::SERVER;
 use crate::protocol::server::world::WORLD;
@@ -90,7 +91,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let world_border_hit = try_err!(packet.read_u8());
         let sequence = try_err!(packet.decode_varint());
 
-        let pos_offset = [
+        let face = [
             Vector3 {x:0, y:-1, z:0},
             Vector3 {x:0, y:1, z:0},
             Vector3 {x:0, y:0, z:-1},
@@ -98,16 +99,16 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             Vector3 {x:-1, y:0, z:0},
             Vector3 {x:1, y:0, z:0},
         ][face as usize];
-        let actual_pos = Vector3::add(location, pos_offset);
 
         let player = try_option_err!(handler.player.clone());
         let item = player.hotbar[player.selected_slot as usize];
         let block = match MAP.item_to_block.get(&item) {
-            Some(block) => *block,
+            Some(block) => block,
             None => return None, // if no block is selected we can't place any block.
         };
 
-        let block_change = try_err!((CLIENT_BOUND_PACKETS.block_update)(block, actual_pos));
+        let (block_id, actual_pos) = get_block_id(location, cursor, face, block);
+        let block_change = try_err!((CLIENT_BOUND_PACKETS.block_update)(block_id, actual_pos));
         let filter = (player.uuid.clone(), player.username.clone());
 
         _ = handler.writer.send([
@@ -117,7 +118,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
 
         tokio::spawn(async move {
             let mut world = WORLD.lock().await;
-            world.replace_block(actual_pos, block);
+            world.replace_block(actual_pos, block_id);
 
             SERVER.lock().await.send_to_players(block_change, Some((&filter.0, &filter.1)));
         });

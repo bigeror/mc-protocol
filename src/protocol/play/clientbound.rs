@@ -50,8 +50,14 @@ create_packet_collection!(PlayClientBound,
         varint x,
         varint y,
     )?.concat())},
-    
-    teleport_player: |id: i32, position: Vector3<f64>, motion: Vector3<f64>, direction: Vector2<f32>, relative: Option<i32>| {Ok(concat_buffer!(
+
+    teleport_player: |
+        id: i32,
+        position: Vector3<f64>,
+        motion: Vector3<f64>,
+        direction: Vector2<f32>,
+        relative: Option<i32>
+    | {Ok(concat_buffer!(
         byte 0x41,
         varint id,
         double position.x,
@@ -100,20 +106,21 @@ create_packet_collection!(PlayClientBound,
         }
 
         Ok(concat_buffer!(
-        byte 0x27,
-        int position.x,
-        int position.y,
-        byte 0, // no heightmap
-        varint sections_data.len() as i32, // chunk section data length (in bytes)
-        buf sections_data, // chunk sections
-        byte 0, // block entities
-        byte 0, // empty data
-        byte 0, // empty data
-        byte 0, // empty data
-        byte 0, // empty data
-        byte 0, // empty data
-        byte 0, // empty data
-    )?.concat())},
+            byte 0x27,
+            int position.x,
+            int position.y,
+            byte 0, // no heightmap
+            varint sections_data.len() as i32, // chunk section data length (in bytes)
+            buf sections_data, // chunk sections
+            byte 0, // block entities
+            byte 0, // empty data
+            byte 0, // empty data
+            byte 0, // empty data
+            byte 0, // empty data
+            byte 0, // empty data
+            byte 0, // empty data
+        )?.concat())
+    },
 
     send_system_message: |message: Vec<u8>, overlay: bool| {Ok(concat_buffer!(
         byte 0x72,
