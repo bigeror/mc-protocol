@@ -18,7 +18,7 @@ use crate::{
     protocol::{
         datatypes::{
             Player, ProtocolHandler, RuntimeError, States
-        }, initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE as SERVER_BOUND_PACKETS_INSTANCE_INIT, play::{clientbound::CLIENT_BOUND_PACKETS, serverbound::SERVERBOUND_PACKET_INSTANCE}, server::server::SERVER
+        }, initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE as SERVER_BOUND_PACKETS_INSTANCE_INIT, play::{clientbound::CLIENT_BOUND_PACKETS, serverbound::SERVERBOUND_PACKET_INSTANCE}, server::server::{Data, SERVER}
     },
 };
 
@@ -47,14 +47,17 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
 
         match (this.player.clone(), this.status == States::Configuration || this.status == States::Play) {
             (Some(player), true) => {
-                let mut server = SERVER.lock().await;
-                server.players.remove(&(player.clone().uuid, player.clone().username));
+                _ = SERVER.send(Data::RemovePlayer { player: (player.clone().uuid, player.clone().username) });
 
                 let message = format!("{} left the game.", player.username);
-                server.send_to_players((CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
-                    "text": message,
-                    "color": "yellow",
-                }).write_unnamed().to_vec(), false).unwrap(), None);
+                _ = SERVER.send(Data::Packet{
+                    data: (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
+                        "text": message,
+                        "color": "yellow",
+                    }).write_unnamed().to_vec(), false).unwrap(), 
+                    filter: Some((player.clone().uuid, player.clone().username)) 
+                });
+
                 println!("Player {} [{}] disconnected the game.", player.username, player.uuid);
             },
             (_, true) => panic!("Got unexpected state: handler is in configuration / play but no player information."),

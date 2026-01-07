@@ -6,7 +6,7 @@ use crate::{
     protocol::{Player, RuntimeError, States, 
         datatypes::{Responses, Vector2, Vector3}, 
         initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
-        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{server::SERVER, world::WORLD}
+        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::{Data, SERVER}
     }, try_err, try_option_err
 };
 
@@ -104,15 +104,22 @@ fn configuration_responses() -> Responses {
             try_err!((CLIENT_BOUND_PACKETS_PLAY.login)()),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(player.uuid.clone(), player.username.clone())),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)),
+            try_err!((CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)),
+            try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)),
+            {
+                let mut output: Vec<u8> = Vec::new();
+                for x in -5..5 {for y in -5..5 {
+                    output.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y })));
+                }}
+                output
+            },
+            try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
                 Vector3 { x: 0.0, y: 128.0, z: 0.0 },
                 Vector3 { x: 0.0, y: 1.0, z: 0.0 },
                 Vector2 { x: 0.0, y: 0.0 },
                 None
             )),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
         ].concat();
         _ = handler.writer.send(response);
 
@@ -123,23 +130,8 @@ fn configuration_responses() -> Responses {
         }).write_unnamed().into(), false));
 
         let writer = handler.writer.clone();
-        tokio::spawn(async move {
-            let mut server = SERVER.lock().await;
-            server.players.insert((player.uuid, player.username), writer.clone());
-
-            server.send_to_players(message_bytes, None);
-
-            let mut world = WORLD.lock().await;
-            let mut output: Vec<u8> = Vec::new();
-            for x in -5..5 {for y in -5..5 {
-                output.extend(match (CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y }, &mut world) {
-                    Ok(val) => val,
-                    Err(err) => {println!("{:?}", err); continue}
-                });
-            }}
-            _ = writer.send(output);
-            drop(world);
-        });
+        _ = SERVER.send(Data::AddPlayer { player: (player.uuid, player.username), sender: writer.clone() });
+        _ = SERVER.send(Data::Packet { data: message_bytes, filter: None });
 
         handler.status = States::Play;
         None

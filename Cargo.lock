@@ -197,6 +197,7 @@ dependencies = [
  "crab_nbt",
  "futures",
  "json",
+ "parking_lot",
  "rand",
  "regex",
  "tokio",

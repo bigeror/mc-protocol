@@ -5,7 +5,7 @@ pub fn get_block_id(
     pos: Vector3<i32>,
     offset: Vector3<f32>,
     face: Vector3<i32>,
-    block: &BlockType
+    block: &BlockType,
 ) -> (i32, Vector3<i32>) {
     (match block {
         BlockType::Block(id) => *id,

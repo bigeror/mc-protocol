@@ -1,5 +1,5 @@
 use std::{collections::HashMap, sync::LazyLock};
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 
 use crate::protocol::datatypes::Vector3;
 
@@ -69,6 +69,28 @@ impl World {
                 section
             }
         }
+    }
+    pub fn get_block(&mut self, location: Vector3<i32>) -> Option<i32> {
+        fn compress_location(location: i32) -> i32 {(location as f64 / 16.0).floor() as i32}
+        fn get_chunk_location(location: i32, chunk_location: i32) -> i32 {location - (chunk_location * 16)}
+
+        let chunk_coordinates: Vector3<i32> = Vector3 {
+            x: compress_location(location.x),
+            y: compress_location(location.y) + 4,
+            z: compress_location(location.z),
+        };
+        let  section = match self.chunks.get(&chunk_coordinates) {
+            Some(val) => val.clone(),
+            None => return None,
+        };
+        let chunk_location: Vector3<i32> = Vector3 {
+            x: (7 - get_chunk_location(location.x, chunk_coordinates.x)).rem_euclid(16),
+            y: get_chunk_location(location.y + 64, chunk_coordinates.y),
+            z: get_chunk_location(location.z, chunk_coordinates.z),
+        };
+        let block_index = chunk_location.y * 256 + chunk_location.z * 16 + chunk_location.x;
+
+        Some(section.palette[section.block_data[block_index as usize] as usize])
     }
 }
 

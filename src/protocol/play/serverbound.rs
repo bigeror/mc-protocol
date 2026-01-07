@@ -9,7 +9,7 @@ use crate::protocol::datatypes::Vector3;
 use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
 use crate::protocol::play::place_block::get_block_id;
 use crate::protocol::server::mapping::MAP;
-use crate::protocol::server::server::SERVER;
+use crate::protocol::server::server::{Data, SERVER};
 use crate::protocol::server::world::WORLD;
 use crate::{
     protocol::{datatypes::{Responses, RuntimeError}}, try_err, try_option_err
@@ -54,7 +54,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             ],
         }).write_unnamed().into(), false));
 
-        tokio::spawn(async move {SERVER.lock().await.send_to_players(response, None)});
+        _ = SERVER.send(Data::Packet { data: response, filter: None });
         None
     });
 
@@ -64,16 +64,16 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let face = try_err!(packet.read_u8());
         let sequence = try_err!(packet.decode_varint());
 
+        let mut world = WORLD.lock();
+        world.replace_block(position, 0);
+        drop(world);
+
         let response = [
             try_err!((CLIENT_BOUND_PACKETS.block_update)(0, position)),
             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
         ].concat();
 
-        tokio::spawn(async move {
-            let mut world = WORLD.lock().await;
-            world.replace_block(position, 0);
-            SERVER.lock().await.send_to_players(response, None);
-        });
+        _ = SERVER.send(Data::Packet { data: response, filter: None });
 
         None
     });
@@ -109,19 +109,17 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
 
         let (block_id, actual_pos) = get_block_id(location, cursor, face, block);
         let block_change = try_err!((CLIENT_BOUND_PACKETS.block_update)(block_id, actual_pos));
-        let filter = (player.uuid.clone(), player.username.clone());
+
+        let mut world = WORLD.lock();
+        world.replace_block(actual_pos, block_id);
+        drop(world);
 
         _ = handler.writer.send([
             block_change.clone(),
             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
         ].concat());
 
-        tokio::spawn(async move {
-            let mut world = WORLD.lock().await;
-            world.replace_block(actual_pos, block_id);
-
-            SERVER.lock().await.send_to_players(block_change, Some((&filter.0, &filter.1)));
-        });
+        _ = SERVER.send(Data::Packet { data: block_change, filter: Some((player.uuid, player.username)) });
         None
     });
 
