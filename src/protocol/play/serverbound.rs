@@ -54,7 +54,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             ],
         }).write_unnamed().into(), false));
 
-        _ = SERVER.send(Data::Packet { data: response, filter: None });
+        _ = SERVER.sender.send(Data::Packet { data: response, filter: None });
         None
     });
 
@@ -73,7 +73,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
         ].concat();
 
-        _ = SERVER.send(Data::Packet { data: response, filter: None });
+        _ = SERVER.sender.send(Data::Packet { data: response, filter: None });
 
         None
     });
@@ -82,6 +82,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let hand = try_err!(packet.decode_varint());
         let location = try_err!(packet.decode_position());
         let face = try_err!(packet.decode_varint());
+        if face < 0 || face >= 6 {return Some(RuntimeError::IncorrectValue)}
         let cursor = Vector3 {
             x: try_err!(packet.decode_float()),
             y: try_err!(packet.decode_float()),
@@ -119,7 +120,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             try_err!((CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)),
         ].concat());
 
-        _ = SERVER.send(Data::Packet { data: block_change, filter: Some((player.uuid, player.username)) });
+        _ = SERVER.sender.send(Data::Packet { data: block_change, filter: Some((player.uuid, player.username)) });
         None
     });
 
@@ -143,6 +144,14 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let slot = try_err!(packet.decode_short());
         if slot < 0 || slot > 8 { return Some(RuntimeError::IncorrectValue); }
         try_option_err!(handler.player.as_mut()).selected_slot = slot;
+        None
+    });
+
+    responses.insert(0x1D, |packet, handler| {
+        let x = try_err!(packet.decode_double());
+        let y = try_err!(packet.decode_double());
+        let z = try_err!(packet.decode_double());
+        let flags = try_err!(packet.read_u8());
         None
     });
 

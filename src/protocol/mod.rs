@@ -47,10 +47,13 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
 
         match (this.player.clone(), this.status == States::Configuration || this.status == States::Play) {
             (Some(player), true) => {
-                _ = SERVER.send(Data::RemovePlayer { player: (player.clone().uuid, player.clone().username) });
+                _ = SERVER.sender.send(Data::RemovePlayer { player: (
+                    player.clone().uuid, 
+                    player.clone().username
+                ) });
 
                 let message = format!("{} left the game.", player.username);
-                _ = SERVER.send(Data::Packet{
+                _ = SERVER.sender.send(Data::Packet{
                     data: (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
                         "text": message,
                         "color": "yellow",

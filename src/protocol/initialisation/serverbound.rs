@@ -1,12 +1,11 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock}};
 use crab_nbt::nbt;
 use rand::random;
-
 use crate::{
     protocol::{Player, RuntimeError, States, 
         datatypes::{Responses, Vector2, Vector3}, 
         initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
-        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::{Data, SERVER}
+        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{server::{Data, SERVER}}
     }, try_err, try_option_err
 };
 
@@ -54,13 +53,17 @@ fn login_responses() -> Responses {
     responses.insert( 0x00, |packet, handler| {
         let username: Arc<str> = try_err!(packet.decode_string()).into();
         let uuid: Arc<str> = try_err!(packet.decode_uuid()).into();
+        let eid = SERVER.mutex.lock().get_push_eid();
 
         handler.player = Some(Player {
+            eid: eid,
             username: username.clone(),
             uuid: uuid.clone(),
             keepalive_num: random(),
             hotbar: [0; 9],
             selected_slot: 0,
+            position: Vector3 { x: 0.0, y: 128.0, z: 0.0 },
+            rotation: Vector2 { x: 0.0, y: 0.0 }
         });
 
         let response = try_err!((CLIENT_BOUND_PACKETS.connect.login_success)(username, uuid));
@@ -99,13 +102,32 @@ fn configuration_responses() -> Responses {
     responses.insert( 0x03, |packet, handler| {
         let player = try_option_err!(handler.player.clone());
         println!("Player {} [{}] joined the game!", player.username, player.uuid);
+        let mut players = Vec::new();
+        let mut entity_packet = Vec::new();
+        let lock = SERVER.mutex.lock();
+        for player in lock.players.iter() {
+            players.push((player.0.0.clone(), player.0.1.clone(), player.1.1));
+            let player_info = match lock.positions.get(&player.1.1) {
+                Some(t) => t,
+                None => continue
+            };
+            entity_packet.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(
+                player.1.1, player.0.0.clone(), 149,
+                player_info.0, player_info.1, 0,
+                Vector3 { x: 0.0, y: 0.0, z: 0.0 }
+            )));
+        };
+        // players.push();
+        println!("{:?}", players);
 
         let response = [
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.login)()),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(player.uuid.clone(), player.username.clone())),
+            try_err!((CLIENT_BOUND_PACKETS_PLAY.login)(player.eid)),
+            try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(
+                [players, vec![(player.uuid.clone(), player.username.clone(), player.eid)]].concat())),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)),
+            entity_packet,
             {
                 let mut output: Vec<u8> = Vec::new();
                 for x in -5..5 {for y in -5..5 {
@@ -113,11 +135,11 @@ fn configuration_responses() -> Responses {
                 }}
                 output
             },
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
+            // try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
             try_err!((CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
-                Vector3 { x: 0.0, y: 128.0, z: 0.0 },
+                player.position,
                 Vector3 { x: 0.0, y: 1.0, z: 0.0 },
-                Vector2 { x: 0.0, y: 0.0 },
+                player.rotation,
                 None
             )),
         ].concat();
@@ -130,8 +152,14 @@ fn configuration_responses() -> Responses {
         }).write_unnamed().into(), false));
 
         let writer = handler.writer.clone();
-        _ = SERVER.send(Data::AddPlayer { player: (player.uuid, player.username), sender: writer.clone() });
-        _ = SERVER.send(Data::Packet { data: message_bytes, filter: None });
+        _ = SERVER.sender.send(Data::AddPlayer {
+            player: (player.uuid, player.username),
+            sender: writer.clone(),
+            eid: player.eid,
+            position: player.position,
+            rotation: player.rotation,
+        });
+        _ = SERVER.sender.send(Data::Packet { data: message_bytes, filter: None });
 
         handler.status = States::Play;
         None

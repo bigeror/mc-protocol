@@ -54,11 +54,14 @@ pub struct ProtocolHandler {
 
 #[derive(Debug, Clone)]
 pub struct Player {
+    pub eid: i32,
     pub username: Arc<str>,
     pub uuid: Arc<str>,
     pub keepalive_num: i64,
     pub hotbar: [i32; 9],
     pub selected_slot: i16,
+    pub position: Vector3<f64>,
+    pub rotation: Vector2<f32>,
 }
 
 #[derive(Debug)]

@@ -3,9 +3,9 @@ use std::sync::{Arc, LazyLock};
 use crate::{concat_buffer, create_packet_collection, datatypes::Packet, protocol::{datatypes::{Vector2, Vector3}, server::world::WORLD}};
 
 create_packet_collection!(PlayClientBound,
-    login: | | {Ok(concat_buffer!{
+    login: |eid: i32| {Ok(concat_buffer!{
         byte 0x2B,
-        int 1, //Player entity id
+        int eid, //Player entity id
         byte 0, // is hardcore
         byte 1, str "minecraft:overworld", // dimension names
         byte 1, // max players (ignored)
@@ -27,14 +27,17 @@ create_packet_collection!(PlayClientBound,
         byte 0, // enforce secure chat
     }?.concat())},
 
-    player_info_update: |uuid: Arc<str>, username: Arc<str> | {Ok(concat_buffer!{
+    player_info_update: |players: Vec<(Arc<str>, Arc<str>, i32)>| {Ok(concat_buffer!{
         byte 0x3F,
         byte 0x01 | 0x08, // Add player & Update listed
-        varint 1, // example server with only 1 player (1 item in array)
-        uuid &uuid,
-        str &username,
-        byte 0,
-        byte 1,
+        varint players.len() as i32, // example server with only 1 player (1 item in array)
+        buf {
+            let mut output = Vec::new();
+            for player in players { output.extend(
+                concat_buffer!(uuid &player.0, str &player.1, byte 0, byte 1)?
+            ) }
+            output.concat()
+        },
     }?.concat())},
 
     game_event: |id: u8, data: f32| {Ok(concat_buffer!(
@@ -130,6 +133,65 @@ create_packet_collection!(PlayClientBound,
 
     aknowledge_block_change: |id: i32| {Ok(concat_buffer!(byte 0x04, varint id)?.concat())},
     block_update: |id: i32, position: Vector3<i32>| {Ok(concat_buffer!(byte 0x08, pos position, varint id)?.concat())},
+
+    summon_entity: |
+        id: i32,
+        uuid: Arc<str>,
+        entity_type: i32,
+        position: Vector3<f64>,
+        rotation: Vector2<f32>,
+        data: i32,
+        velocity: Vector3<f64>
+    | {Ok(concat_buffer!(
+        byte 0x01,
+        varint id,
+        uuid &uuid,
+        varint entity_type,
+        double position.x,
+        double position.y,
+        double position.z,
+        byte ((rotation.x / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        byte ((rotation.y / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        byte ((rotation.y / 360.0).rem_euclid(1.0) * 256.0).floor() as u8,
+        varint data,
+        short (velocity.x * 8000.0) as i16,
+        short (velocity.y * 8000.0) as i16,
+        short (velocity.z * 8000.0) as i16,
+    )?.concat())},
+
+    remove_entity: |ids: Vec<i32>| {
+        let mut ids_buffer = Vec::new();
+        for id in &ids {ids_buffer.extend(concat_buffer!(varint *id)?)}
+        Ok(concat_buffer!(
+            byte 0x46,
+            varint ids.len() as i32,
+            buf ids_buffer.concat(),
+        )?.concat()
+    )},
+
+    update_attributes: |propeties: Vec<(i32, f64)>| {Ok(concat_buffer!(
+        byte 0x7C,
+        varint 0,
+        varint propeties.len() as i32,
+        buf {
+            let mut output = Vec::new();
+            for propety in propeties {output.extend(
+                concat_buffer!(varint propety.0, double propety.1, byte 0)?
+            )}
+            output.concat()
+        },
+    )?.concat())},
+
+    update_position: |eid: i32, delta_pos: Vector3<f64>, rotation: Vector2<f32>, on_ground: bool| {Ok(concat_buffer!(
+        byte 0x2F,
+        varint eid,
+        short (delta_pos.x * 4096.0) as i16,
+        short (delta_pos.y * 4096.0) as i16,
+        short (delta_pos.z * 4096.0) as i16,
+        byte ((rotation.x / 360.0) % 1.0 * 256.0) as u8,
+        byte ((rotation.y / 360.0) % 1.0 * 256.0) as u8,
+        byte on_ground as u8,
+    )?.concat())},
 );
 
 pub static CLIENT_BOUND_PACKETS: LazyLock<PlayClientBound> = LazyLock::new(PlayClientBound::init);
