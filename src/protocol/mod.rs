@@ -6,19 +6,19 @@ pub mod server;
 
 use core::net::SocketAddr;
 use std::panic::AssertUnwindSafe;
-use crab_nbt::nbt;
 use futures::FutureExt;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt}, 
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, tcp::OwnedWriteHalf}, sync::mpsc,
 };
 
 use crate::{
     datatypes::{Packet, decode_packet_length},
     protocol::{
-        datatypes::{
-            Player, ProtocolHandler, RuntimeError, States
-        }, initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE as SERVER_BOUND_PACKETS_INSTANCE_INIT, play::{clientbound::CLIENT_BOUND_PACKETS, serverbound::SERVERBOUND_PACKET_INSTANCE}, server::server::{Data, SERVER}
+        datatypes::{ Player, ProtocolHandler, RuntimeError, States },
+        initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE as SERVER_BOUND_PACKETS_INSTANCE_INIT, 
+        play::{serverbound::SERVERBOUND_PACKET_INSTANCE},
+        server::server::{Data, SERVER}
     },
 };
 
@@ -51,17 +51,6 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
                     player.clone().uuid, 
                     player.clone().username
                 ) });
-
-                let message = format!("{} left the game.", player.username);
-                _ = SERVER.sender.send(Data::Packet{
-                    data: (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
-                        "text": message,
-                        "color": "yellow",
-                    }).write_unnamed().to_vec(), false).unwrap(), 
-                    filter: Some((player.clone().uuid, player.clone().username)) 
-                });
-
-                println!("Player {} [{}] disconnected the game.", player.username, player.uuid);
             },
             (_, true) => panic!("Got unexpected state: handler is in configuration / play but no player information."),
             _ => ()

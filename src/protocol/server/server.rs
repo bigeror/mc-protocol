@@ -1,4 +1,5 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock}};
+use crab_nbt::nbt;
 use parking_lot::Mutex;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
@@ -82,29 +83,51 @@ impl Server {
                     players.push((player.0.0.clone(), player.0.1.clone(), player.1.1));
                 }
 
+                let player_name: &str = &player.1.clone();
                 let player_packet = [
+                    (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
+                        "text": "",
+                        "extra": [
+                            {"text": "[", "color": "gray"},
+                            {"text": "+", "color": "green"},
+                            {"text": "] ", "color": "gray"},
+                            {"text": player_name}
+                        ]
+                    }).write_unnamed().to_vec(), false).unwrap(),
                     (CLIENT_BOUND_PACKETS.player_info_update)(players).unwrap(),
                     (CLIENT_BOUND_PACKETS.summon_entity)(
                         eid, player.0.clone(), 149, position, rotation, 0, Vector3 { x: 0.0, y: 0.0, z: 0.0 }
                     ).unwrap(),
                 ].concat();
 
+                println!("[+] {} [{}]", player.1, player.0);
                 _ = writer.send(Data::Packet { data: player_packet, filter: Some(player) });
             },
 
             Data::RemovePlayer { player } => {
-                if let Some(eid) = lock.players.remove(&player) {
-                    let eid = eid.1;
+                let Some(eid) = lock.players.remove(&player) else {return};
+                let eid = eid.1;
 
-                    let player_packet = [
-                        (CLIENT_BOUND_PACKETS.player_info_remove)(player.0.clone()).unwrap(),
-                        (CLIENT_BOUND_PACKETS.remove_entity)(vec![eid]).unwrap(),
-                    ].concat();
-                    _ = writer.send(Data::Packet { data: player_packet, filter: Some(player.clone()) });
+                let player_name: &str = &player.1.clone();
+                let player_packet = [
+                    (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
+                        "text": "",
+                        "extra": [
+                            {"text": "[", "color": "gray"},
+                            {"text": "-", "color": "red"},
+                            {"text": "] ", "color": "gray"},
+                            {"text": player_name}
+                        ]
+                    }).write_unnamed().to_vec(), false).unwrap(),
+                    (CLIENT_BOUND_PACKETS.player_info_remove)(player.0.clone()).unwrap(),
+                    (CLIENT_BOUND_PACKETS.remove_entity)(vec![eid]).unwrap(),
+                ].concat();
 
-                    lock.positions.remove(&eid);
-                    lock.eids.retain(|val| val != &eid);
-                };
+                println!("[-] {} [{}]", player.1, player.0);
+                _ = writer.send(Data::Packet { data: player_packet, filter: Some(player.clone()) });
+
+                lock.positions.remove(&eid);
+                lock.eids.retain(|val| val != &eid);
             },
 
             Data::UpdatePosition {

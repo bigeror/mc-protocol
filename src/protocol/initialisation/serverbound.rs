@@ -101,24 +101,24 @@ fn configuration_responses() -> Responses {
 
     responses.insert( 0x03, |packet, handler| {
         let player = try_option_err!(handler.player.clone());
-        println!("Player {} [{}] joined the game!", player.username, player.uuid);
         let mut players = Vec::new();
         let mut entity_packet = Vec::new();
         let lock = SERVER.mutex.lock();
+
         for player in lock.players.iter() {
             players.push((player.0.0.clone(), player.0.1.clone(), player.1.1));
             let player_info = match lock.positions.get(&player.1.1) {
                 Some(t) => t,
                 None => continue
             };
+
             entity_packet.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(
                 player.1.1, player.0.0.clone(), 149,
                 player_info.0, player_info.1, 0,
                 Vector3 { x: 0.0, y: 0.0, z: 0.0 }
             )));
         };
-        // players.push();
-        println!("{:?}", players);
+        let player_name: &str = &player.username.clone();
 
         let response = [
             try_err!((CLIENT_BOUND_PACKETS_PLAY.login)(player.eid)),
@@ -142,14 +142,17 @@ fn configuration_responses() -> Responses {
                 player.rotation,
                 None
             )),
+            try_err!((CLIENT_BOUND_PACKETS_PLAY.send_system_message)(nbt!("", {
+                "text": "",
+                "extra": [
+                    {"text": "[", "color": "gray"},
+                    {"text": "+", "color": "green"},
+                    {"text": "] ", "color": "gray"},
+                    {"text": player_name}
+                ]
+            }).write_unnamed().to_vec(), false)),
         ].concat();
         _ = handler.writer.send(response);
-
-        let message = format!("{} joined the game!", player.username);
-        let message_bytes = try_err!((CLIENT_BOUND_PACKETS_PLAY.send_system_message)(nbt!("", {
-            "text": message,
-            "color": "yellow"
-        }).write_unnamed().into(), false));
 
         let writer = handler.writer.clone();
         _ = SERVER.sender.send(Data::AddPlayer {
@@ -159,7 +162,6 @@ fn configuration_responses() -> Responses {
             position: player.position,
             rotation: player.rotation,
         });
-        _ = SERVER.sender.send(Data::Packet { data: message_bytes, filter: None });
 
         handler.status = States::Play;
         None
