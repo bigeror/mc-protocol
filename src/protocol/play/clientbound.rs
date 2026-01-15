@@ -39,6 +39,7 @@ create_packet_collection!(PlayClientBound,
             output.concat()
         },
     }?.concat())},
+    player_info_remove: |uuid: Arc<str>| {Ok(concat_buffer!{ byte 0x3E, varint 1, uuid &uuid }?.concat())},
 
     game_event: |id: u8, data: f32| {Ok(concat_buffer!(
         byte 0x22,

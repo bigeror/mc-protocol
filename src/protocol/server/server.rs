@@ -4,7 +4,7 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 
 use crate::protocol::{datatypes::{Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS};
 
-
+#[derive(Debug)]
 pub struct Server {
     // uuid, username
     pub players: HashMap<(Arc<str>, Arc<str>), (UnboundedSender<Vec<u8>>, i32)>,
@@ -43,60 +43,7 @@ impl Server {
                 Some(val) => val,
                 None => panic!("Server reader was closed!")
             };
-            // println!("{:?}", data);
-
-            let mut lock = mutex_clone.lock();
-            match data {
-                Data::Packet { data, filter } => {
-                    lock.players.iter().for_each(move |(
-                        (uuid, username),
-                        (writer, _)
-                    )| {
-                        if let Some(filter_ptr) = filter.clone() {
-                            if (uuid, username) == (&filter_ptr.0, &filter_ptr.1) {return}
-                        }
-                        println!("{}, {}, {:?}", username, uuid, data);
-                        _ = writer.send(data.clone());
-                    });
-                },
-
-                Data::AddPlayer {
-                    player,
-                    sender,
-                    eid,
-                    position,
-                    rotation
-                } => {
-                    lock.players.insert(player.clone(), (sender, eid));
-                    lock.positions.insert(eid, (position, rotation, true));
-                    let mut player_packet = (CLIENT_BOUND_PACKETS.summon_entity)(
-                        eid, player.0.clone(), 149, position, rotation, 0, Vector3 { x: 0.0, y: 0.0, z: 0.0 }
-                    ).unwrap();
-                    let mut players = Vec::new();
-                    for player in lock.players.iter() {
-                        players.push((player.0.0.clone(), player.0.1.clone(), player.1.1));
-                    }
-                    player_packet.extend((CLIENT_BOUND_PACKETS.player_info_update)(players).unwrap());
-                    _ = sender_clone.send(Data::Packet { data: player_packet, filter: Some(player) });
-                },
-
-                Data::RemovePlayer { player } => {
-                    if let Some(eid) = lock.players.remove(&player) {
-                        let eid = eid.1;
-                        let player_packet = (CLIENT_BOUND_PACKETS.remove_entity)(vec![eid]).unwrap();
-                        _ = sender_clone.send(Data::Packet { data: player_packet, filter: Some(player) });
-                    };
-                },
-
-                Data::UpdatePosition {
-                    eid,
-                    position,
-                    rotation,
-                    on_ground
-                } => {
-                    todo!()
-                },
-            }
+            Self::handle_data(data, mutex_clone.clone(), sender_clone.clone());
         }});
         ServerStatic { sender, mutex }
     }
@@ -105,6 +52,70 @@ impl Server {
             {Some(val) => *val + 1, None => 0};
         self.eids.push(eid);
         eid
+    }
+    pub fn handle_data(data: Data, mutex: Arc<Mutex<Server>>, writer: UnboundedSender<Data>) {
+        let mut lock = mutex.lock();
+
+        match data {
+            Data::Packet { data, filter } => {
+                for ((uuid, username), (writer, _))
+                in lock.players.iter() {
+                    if let Some(filter_ptr) = filter.clone() {
+                        if (uuid, username) == (&filter_ptr.0, &filter_ptr.1) {continue}
+                    }
+                    _ = writer.send(data.clone());
+                };
+            },
+
+            Data::AddPlayer {
+                player,
+                sender,
+                eid,
+                position,
+                rotation
+            } => {
+                lock.players.insert(player.clone(), (sender, eid));
+                lock.positions.insert(eid, (position, rotation, true));
+
+                let mut players = Vec::new();
+                for player in lock.players.iter() {
+                    players.push((player.0.0.clone(), player.0.1.clone(), player.1.1));
+                }
+
+                let player_packet = [
+                    (CLIENT_BOUND_PACKETS.player_info_update)(players).unwrap(),
+                    (CLIENT_BOUND_PACKETS.summon_entity)(
+                        eid, player.0.clone(), 149, position, rotation, 0, Vector3 { x: 0.0, y: 0.0, z: 0.0 }
+                    ).unwrap(),
+                ].concat();
+
+                _ = writer.send(Data::Packet { data: player_packet, filter: Some(player) });
+            },
+
+            Data::RemovePlayer { player } => {
+                if let Some(eid) = lock.players.remove(&player) {
+                    let eid = eid.1;
+
+                    let player_packet = [
+                        (CLIENT_BOUND_PACKETS.player_info_remove)(player.0.clone()).unwrap(),
+                        (CLIENT_BOUND_PACKETS.remove_entity)(vec![eid]).unwrap(),
+                    ].concat();
+                    _ = writer.send(Data::Packet { data: player_packet, filter: Some(player.clone()) });
+
+                    lock.positions.remove(&eid);
+                    lock.eids.retain(|val| val != &eid);
+                };
+            },
+
+            Data::UpdatePosition {
+                eid,
+                position,
+                rotation,
+                on_ground
+            } => {
+                todo!()
+            },
+        }
     }
 }
 
