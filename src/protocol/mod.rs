@@ -65,16 +65,14 @@ async fn setup_writer(mut writer: OwnedWriteHalf) -> mpsc::UnboundedSender<Vec<u
         mpsc::unbounded_channel::<Vec<u8>>();
 
     tokio::spawn(async move {
-        loop {
-            if let Some(mut message) = reader.recv().await {
-                if message == vec![0] {
-                    _ = writer.shutdown();
-                    reader.close();
-                    return;
-                }
-                _ = writer.write_all(&mut message).await;
+        loop { if let Some(mut message) = reader.recv().await {
+            if message == vec![0] {
+                _ = writer.shutdown();
+                reader.close();
+                return;
             }
-        }
+            _ = writer.write_all(&mut message).await;
+        } }
     });
     sender
 }
@@ -108,71 +106,57 @@ async fn protocol_handler(address: SocketAddr, handler: &mut ProtocolHandler) {
         };
 
         let mut packet = Packet::new(buffer);
-        if let Some(err) = handle_packet(handler, &mut packet).await {
+        if let Err(err) = handle_packet(handler, &mut packet).await {
             eprintln!("runtime error handling packet: {:?}, client disconnected.", err);
             return;
         };
     }
 }
 
-async fn handle_packet(this: &mut ProtocolHandler, packet: &mut Packet) -> Option<RuntimeError> {
-    let mut error: Option<RuntimeError> = None;
-    let protocol = match packet.read_u8() {
-        Ok(value) => value,
-        Err(err) => return Some(err.into())
-    };
+async fn handle_packet(this: &mut ProtocolHandler, packet: &mut Packet) -> Result<(), RuntimeError> {
+    let mut error: Result<(), RuntimeError> = Ok(());
+    let protocol = packet.read_u8()?;
+
     if this.status == States::HandShake {
         return handle_handshake(this, packet, protocol);
     } else if this.status == States::Status {
-        error = match SERVER_BOUND_PACKETS_INSTANCE_INIT.status.get(&protocol) {
-            Some(func) => func(packet, this),
-            None => Some(RuntimeError::IncorrectProtocol),
-        }
+        error = SERVER_BOUND_PACKETS_INSTANCE_INIT.status.get(&protocol)
+            .ok_or(RuntimeError::IncorrectProtocol)? (packet, this);
     } else if this.status == States::Login {
         error = match SERVER_BOUND_PACKETS_INSTANCE_INIT.login.get(&protocol) {
             Some(func) => func(packet, this),
-            None => None,
+            None => Ok(()),
         }
     } else if this.status == States::Configuration {
         error = match SERVER_BOUND_PACKETS_INSTANCE_INIT.configuration.get(&protocol) {
             Some(func) => func(packet, this),
-            None => None,
+            None => Ok(()),
         }
     } else if this.status == States::Play {
         error = match  SERVERBOUND_PACKET_INSTANCE.get(&protocol) {
             Some(func) => func(packet, this),
-            None => None,
+            None => Ok(()),
         }
     }
 
     error
 }
 
-fn handle_handshake( this: &mut ProtocolHandler, packet: &mut Packet, protocol: u8 ) -> Option<RuntimeError> {
-    if !protocol == 0 { return Some(RuntimeError::IncorrectProtocol) };
+fn handle_handshake( this: &mut ProtocolHandler, packet: &mut Packet, protocol: u8 ) -> Result<(), RuntimeError> {
+    if !protocol == 0 { return Err(RuntimeError::IncorrectProtocol) };
 
-    let protocol_version = match packet.decode_varint() {
-        Ok(value) => value,
-        Err(error) => return Some(RuntimeError::DecodeError(error)),
-    };
-
-    let used_ip = match packet.decode_string() {
-        Ok(value) => value,
-        Err(error) => return Some(RuntimeError::DecodeError(error)),
-    };
+    let protocol_version = packet.decode_varint()?;
+    let used_ip = packet.decode_string()?;
     _ = packet.decode_ushort();
 
-    let intent = match packet.decode_varint() {
-        Ok(value) => value,
-        Err(error) => return Some(RuntimeError::DecodeError(error)),
-    };
+    let intent = packet.decode_varint()?;
 
     match intent {
         1 => this.status = States::Status,
         2 => this.status = States::Login,
-        _ => return Some(RuntimeError::IncorrectIntent), // there exist intent 3 but it's ignored
+        _ => return Err(RuntimeError::IncorrectIntent), // there exist intent 3 but it's ignored
     };
 
-    None
+    Ok(())
 }
 

@@ -1,13 +1,11 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock}};
 use crab_nbt::nbt;
 use rand::random;
-use crate::{
-    protocol::{Player, RuntimeError, States, 
-        datatypes::{Responses, Vector2, Vector3}, 
+use crate::protocol::{Player, States, 
+        datatypes::{Responses, RuntimeError, Vector2, Vector3}, 
         initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
-        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{server::{Data, SERVER}}
-    }, try_err, try_option_err
-};
+        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::{Data, SERVER}
+    };
 
 pub struct ServerBoundPackets {
     pub status: Responses,
@@ -33,15 +31,15 @@ fn status_responses() -> Responses {
     let mut responses: Responses = HashMap::new();
 
     responses.insert( 0x00, |packet, handler| {
-        let response = try_err!((CLIENT_BOUND_PACKETS.status.status_response)());
+        let response = (CLIENT_BOUND_PACKETS.status.status_response)()?;
         _ = handler.writer.send(response);
-        None
+        Ok(())
     });
 
     responses.insert( 0x01, |packet, handler| {
-        let response = try_err!((CLIENT_BOUND_PACKETS.status.ping_response)(try_err!(packet.decode_long())));
+        let response = (CLIENT_BOUND_PACKETS.status.ping_response)(packet.decode_long()?)?;
         _ = handler.writer.send(response);
-        None
+        Ok(())
     });
 
     responses
@@ -51,8 +49,8 @@ fn login_responses() -> Responses {
     let mut responses: Responses = HashMap::new();
 
     responses.insert( 0x00, |packet, handler| {
-        let username: Arc<str> = try_err!(packet.decode_string()).into();
-        let uuid: Arc<str> = try_err!(packet.decode_uuid()).into();
+        let username: Arc<str> = packet.decode_string()?.into();
+        let uuid: Arc<str> = packet.decode_uuid()?.into();
         let eid = SERVER.mutex.lock().get_push_eid();
 
         handler.player = Some(Player {
@@ -66,14 +64,14 @@ fn login_responses() -> Responses {
             rotation: Vector2 { x: 0.0, y: 0.0 }
         });
 
-        let response = try_err!((CLIENT_BOUND_PACKETS.connect.login_success)(username, uuid));
+        let response = (CLIENT_BOUND_PACKETS.connect.login_success)(username, uuid)?;
         _ = handler.writer.send(response);
-        None
+        Ok(())
     });
 
     responses.insert( 0x03, |packet, handler| {
         handler.status = States::Configuration;
-        None
+        Ok(())
     });
 
     responses
@@ -84,23 +82,24 @@ fn configuration_responses() -> Responses {
 
     responses.insert( 0x00, |packet, handler| {
         let response = [
-            try_err!((CLIENT_BOUND_PACKETS.connect.plugin_message)()),
-            try_err!((CLIENT_BOUND_PACKETS.connect.send_datapacks)()),
+            (CLIENT_BOUND_PACKETS.connect.plugin_message)()?,
+            (CLIENT_BOUND_PACKETS.connect.send_datapacks)()?,
         ].concat();
         _ = handler.writer.send(response);
-        None
+        Ok(())
     });
 
     responses.insert( 0x07, |packet, handler| {
         let response = [
-            try_err!(default_registry_data()),
-            try_err!((CLIENT_BOUND_PACKETS.connect.configuration_finish)()),
+            default_registry_data()?,
+            (CLIENT_BOUND_PACKETS.connect.configuration_finish)()?,
         ].concat();
         _ = handler.writer.send(response);
-        None });
+        Ok(())
+    });
 
     responses.insert( 0x03, |packet, handler| {
-        let player = try_option_err!(handler.player.clone());
+        let player = handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?;
         let mut players = Vec::new();
         let mut entity_packet = Vec::new();
         let lock = SERVER.mutex.lock();
@@ -112,45 +111,46 @@ fn configuration_responses() -> Responses {
                 None => continue
             };
 
-            entity_packet.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(
+            entity_packet.extend((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(
                 player.1.1, player.0.0.clone(), 149,
                 player_info.0, player_info.1, 0,
                 Vector3 { x: 0.0, y: 0.0, z: 0.0 }
-            )));
+            )?);
         };
         let player_name: &str = &player.username.clone();
+        let player_uuid: &str = &player.uuid.clone();
 
         let response = [
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.login)(player.eid)),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.player_info_update)(
-                [players, vec![(player.uuid.clone(), player.username.clone(), player.eid)]].concat())),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)),
+            (CLIENT_BOUND_PACKETS_PLAY.login)(player.eid)?,
+            (CLIENT_BOUND_PACKETS_PLAY.player_info_update)(
+                [players, vec![(player.uuid.clone(), player.username.clone(), player.eid)]].concat())?,
+            (CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)?,
+            (CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)?,
+            (CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)?,
             entity_packet,
             {
                 let mut output: Vec<u8> = Vec::new();
                 for x in -5..5 {for y in -5..5 {
-                    output.extend(try_err!((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y })));
+                    output.extend((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y })?);
                 }}
                 output
             },
-            // try_err!((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
+            // (CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
+            (CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
                 player.position,
                 Vector3 { x: 0.0, y: 1.0, z: 0.0 },
                 player.rotation,
                 None
-            )),
-            try_err!((CLIENT_BOUND_PACKETS_PLAY.send_system_message)(nbt!("", {
+            )?,
+            (CLIENT_BOUND_PACKETS_PLAY.send_system_message)(nbt!("", {
                 "text": "",
                 "extra": [
                     {"text": "[", "color": "gray"},
                     {"text": "+", "color": "green"},
                     {"text": "] ", "color": "gray"},
-                    {"text": player_name}
+                    {"text": player_name, "hover_event": {"action": "show_text", "value": player_uuid}}
                 ]
-            }).write_unnamed().to_vec(), false)),
+            }).write_unnamed().to_vec(), false)?,
         ].concat();
         _ = handler.writer.send(response);
 
@@ -164,7 +164,7 @@ fn configuration_responses() -> Responses {
         });
 
         handler.status = States::Play;
-        None
+        Ok(())
     });
 
     responses

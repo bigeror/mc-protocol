@@ -32,7 +32,7 @@ impl From<DatatypeError> for RuntimeError {
     fn from(error: DatatypeError) -> Self { Self::DecodeError(error) }
 }
 
-pub type Responses = HashMap<u8, fn(&mut Packet, &mut ProtocolHandler) -> Option<RuntimeError>>;
+pub type Responses = HashMap<u8, fn(&mut Packet, &mut ProtocolHandler) -> Result<(), RuntimeError>>;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum States {

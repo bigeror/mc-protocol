@@ -84,6 +84,7 @@ impl Server {
                 }
 
                 let player_name: &str = &player.1.clone();
+                let player_uuid: &str = &player.0.clone();
                 let player_packet = [
                     (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
                         "text": "",
@@ -91,7 +92,7 @@ impl Server {
                             {"text": "[", "color": "gray"},
                             {"text": "+", "color": "green"},
                             {"text": "] ", "color": "gray"},
-                            {"text": player_name}
+                            {"text": player_name, "hover_event": {"action": "show_text", "value": player_uuid}}
                         ]
                     }).write_unnamed().to_vec(), false).unwrap(),
                     (CLIENT_BOUND_PACKETS.player_info_update)(players).unwrap(),
@@ -109,6 +110,7 @@ impl Server {
                 let eid = eid.1;
 
                 let player_name: &str = &player.1.clone();
+                let player_uuid: &str = &player.0.clone();
                 let player_packet = [
                     (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
                         "text": "",
@@ -116,7 +118,7 @@ impl Server {
                             {"text": "[", "color": "gray"},
                             {"text": "-", "color": "red"},
                             {"text": "] ", "color": "gray"},
-                            {"text": player_name}
+                            {"text": player_name, "hover_event": {"action": "show_text", "value": player_uuid}}
                         ]
                     }).write_unnamed().to_vec(), false).unwrap(),
                     (CLIENT_BOUND_PACKETS.player_info_remove)(player.0.clone()).unwrap(),

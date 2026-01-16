@@ -35,23 +35,3 @@ macro_rules! create_packet_collection {
         }
     };
 }
-
-#[macro_export]
-macro_rules! try_err {
-    ($($item:expr)*) => {
-        match $($item)* {
-            Ok(val) => val,
-            Err(e) => return Some(RuntimeError::from(e))
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! try_option_err {
-    ($($item:expr)*) => {
-        match $($item)* {
-            Some(val) => val,
-            None => return Some(RuntimeError::UnexpectedNone)
-        }
-    };
-}
