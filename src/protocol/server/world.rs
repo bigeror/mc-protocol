@@ -48,7 +48,7 @@ impl World {
             if section.palette.contains(&to_id) {section.palette.iter()
                 .position(|&val| val == to_id).unwrap()}
             else if section.palette.len() < 255 {section.palette.push(to_id); section.palette.len() - 1}
-            else {panic!("too high id")} as u8; // TODO: handle more than 2^4 different ids
+            else {panic!("too high id")} as u8; // TODO: handle more than 2^8 different ids
 
         section.block_data[block_index as usize] = replace_id;
         _ = self.chunks.insert(chunk_coordinates, section);

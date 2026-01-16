@@ -1,6 +1,6 @@
-use std::sync::{Arc, LazyLock};
+use std::sync::LazyLock;
 
-use crate::{concat_buffer, create_packet_collection, datatypes::Packet, protocol::{datatypes::{Vector2, Vector3}, server::world::WORLD}};
+use crate::{concat_buffer, create_packet_collection, datatypes::Packet, protocol::{datatypes::{PlayerKey, Vector2, Vector3}, server::world::WORLD}};
 
 create_packet_collection!(PlayClientBound,
     login: |eid: i32| {Ok(concat_buffer!{
@@ -27,19 +27,19 @@ create_packet_collection!(PlayClientBound,
         byte 0, // enforce secure chat
     }?.concat())},
 
-    player_info_update: |players: Vec<(Arc<str>, Arc<str>, i32)>| {Ok(concat_buffer!{
+    player_info_update: |players: Vec<PlayerKey>| {Ok(concat_buffer!{
         byte 0x3F,
         byte 0x01 | 0x08, // Add player & Update listed
         varint players.len() as i32, // example server with only 1 player (1 item in array)
         buf {
             let mut output = Vec::new();
             for player in players { output.extend(
-                concat_buffer!(uuid &player.0, str &player.1, byte 0, byte 1)?
+                concat_buffer!(uuid player.uuid, str &player.username, byte 0, byte 1)?
             ) }
             output.concat()
         },
     }?.concat())},
-    player_info_remove: |uuid: Arc<str>| {Ok(concat_buffer!{ byte 0x3E, varint 1, uuid &uuid }?.concat())},
+    player_info_remove: |uuid: u128| {Ok(concat_buffer!{ byte 0x3E, varint 1, uuid uuid }?.concat())},
 
     game_event: |id: u8, data: f32| {Ok(concat_buffer!(
         byte 0x22,
@@ -137,7 +137,7 @@ create_packet_collection!(PlayClientBound,
 
     summon_entity: |
         id: i32,
-        uuid: Arc<str>,
+        uuid: u128,
         entity_type: i32,
         position: Vector3<f64>,
         rotation: Vector2<f32>,
@@ -146,7 +146,7 @@ create_packet_collection!(PlayClientBound,
     | {Ok(concat_buffer!(
         byte 0x01,
         varint id,
-        uuid &uuid,
+        uuid uuid,
         varint entity_type,
         double position.x,
         double position.y,

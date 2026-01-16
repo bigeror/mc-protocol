@@ -15,9 +15,9 @@ use tokio::{
 use crate::{
     datatypes::{Packet, decode_packet_length},
     protocol::{
-        datatypes::{ Player, ProtocolHandler, RuntimeError, States },
+        datatypes::{ Player, PlayerKey, ProtocolHandler, RuntimeError, States },
         initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE as SERVER_BOUND_PACKETS_INSTANCE_INIT, 
-        play::{serverbound::SERVERBOUND_PACKET_INSTANCE},
+        play::serverbound::SERVERBOUND_PACKET_INSTANCE,
         server::server::{Data, SERVER}
     },
 };
@@ -47,10 +47,7 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
 
         match (this.player.clone(), this.status == States::Configuration || this.status == States::Play) {
             (Some(player), true) => {
-                _ = SERVER.sender.send(Data::RemovePlayer { player: (
-                    player.clone().uuid, 
-                    player.clone().username
-                ) });
+                _ = SERVER.sender.send(Data::RemovePlayer { player: PlayerKey::from(player) });
             },
             (_, true) => panic!("Got unexpected state: handler is in configuration / play but no player information."),
             _ => ()

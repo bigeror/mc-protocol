@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::{Arc, LazyLock}};
 use crab_nbt::nbt;
 use rand::random;
 use crate::protocol::{Player, States, 
-        datatypes::{Responses, RuntimeError, Vector2, Vector3}, 
+        datatypes::{Display, PlayerKey, Responses, RuntimeError, Vector2, Vector3}, 
         initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
         play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::{Data, SERVER}
     };
@@ -50,13 +50,13 @@ fn login_responses() -> Responses {
 
     responses.insert( 0x00, |packet, handler| {
         let username: Arc<str> = packet.decode_string()?.into();
-        let uuid: Arc<str> = packet.decode_uuid()?.into();
+        let uuid = packet.decode_uuid()?;
         let eid = SERVER.mutex.lock().get_push_eid();
 
         handler.player = Some(Player {
             eid: eid,
             username: username.clone(),
-            uuid: uuid.clone(),
+            uuid: uuid,
             keepalive_num: random(),
             hotbar: [0; 9],
             selected_slot: 0,
@@ -105,25 +105,25 @@ fn configuration_responses() -> Responses {
         let lock = SERVER.mutex.lock();
 
         for player in lock.players.iter() {
-            players.push((player.0.0.clone(), player.0.1.clone(), player.1.1));
+            players.push(player.0.clone());
             let player_info = match lock.positions.get(&player.1.1) {
                 Some(t) => t,
                 None => continue
             };
 
             entity_packet.extend((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(
-                player.1.1, player.0.0.clone(), 149,
+                player.1.1, player.0.uuid.clone(), 149,
                 player_info.0, player_info.1, 0,
                 Vector3 { x: 0.0, y: 0.0, z: 0.0 }
             )?);
         };
         let player_name: &str = &player.username.clone();
-        let player_uuid: &str = &player.uuid.clone();
+        let player_uuid: &str = &player.uuid.display();
 
         let response = [
             (CLIENT_BOUND_PACKETS_PLAY.login)(player.eid)?,
             (CLIENT_BOUND_PACKETS_PLAY.player_info_update)(
-                [players, vec![(player.uuid.clone(), player.username.clone(), player.eid)]].concat())?,
+                [players, vec![PlayerKey::from(player.clone())]].concat())?,
             (CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)?,
             (CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)?,
             (CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)?,
@@ -156,7 +156,7 @@ fn configuration_responses() -> Responses {
 
         let writer = handler.writer.clone();
         _ = SERVER.sender.send(Data::AddPlayer {
-            player: (player.uuid, player.username),
+            player: PlayerKey::from(player.clone()),
             sender: writer.clone(),
             eid: player.eid,
             position: player.position,

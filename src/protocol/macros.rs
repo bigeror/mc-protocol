@@ -10,7 +10,7 @@ macro_rules! concat_buffer {
     (_dev, double $literal:expr) => {Ok(crate::datatypes::Packet::encode_double($literal))};
     (_dev, ushort $literal:expr) => {Ok(crate::datatypes::Packet::encode_ushort($literal))};
     (_dev, short $literal:expr) => {Ok(crate::datatypes::Packet::encode_short($literal))};
-    (_dev, uuid $literal:expr) => {crate::datatypes::Packet::encode_uuid($literal)};
+    (_dev, uuid $literal:expr) => {Ok(crate::datatypes::Packet::encode_uuid($literal))};
     (_dev, pos $literal:expr) => {Ok(crate::datatypes::Packet::encode_position($literal))};
 
     {$($type:tt $literal:expr),+ $(,)?} => {

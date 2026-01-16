@@ -28,9 +28,9 @@ create_packet_collection!(StatusClientBound,
 );
 
 create_packet_collection!(ConnectClientBound,
-    login_success: |username: Arc<str>, uuid: Arc<str>| {Ok(concat_buffer!{
+    login_success: |username: Arc<str>, uuid: u128| {Ok(concat_buffer!{
         byte 2,
-        uuid &uuid,
+        uuid uuid,
         str &username,
         byte 0,
     }?.concat())},

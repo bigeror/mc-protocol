@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use tokio::time;
 
-use crate::protocol::datatypes::Vector3;
+use crate::protocol::datatypes::{Display, PlayerKey, Vector3};
 use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
 use crate::protocol::play::place_block::get_block_id;
 use crate::protocol::server::mapping::MAP;
@@ -45,7 +45,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let message = packet.decode_string()?;
         let player = handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?;
         let username: &str = &player.username;
-        let uuid: &str = &player.uuid;
+        let uuid: &str = &player.uuid.display();
 
         println!("{} -> {}", username, &message);
 
@@ -124,7 +124,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             (CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)?,
         ].concat());
 
-        _ = SERVER.sender.send(Data::Packet { data: block_change, filter: Some((player.uuid, player.username)) });
+        _ = SERVER.sender.send(Data::Packet { data: block_change, filter: Some(PlayerKey::from(player)) });
         Ok(())
     });
 

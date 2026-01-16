@@ -56,12 +56,25 @@ pub struct ProtocolHandler {
 pub struct Player {
     pub eid: i32,
     pub username: Arc<str>,
-    pub uuid: Arc<str>,
+    pub uuid: u128,
     pub keepalive_num: i64,
     pub hotbar: [i32; 9],
     pub selected_slot: i16,
     pub position: Vector3<f64>,
     pub rotation: Vector2<f32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct PlayerKey {
+    pub uuid: u128,
+    pub username: Arc<str>,
+    pub eid: i32,
+}
+
+impl From<Player> for PlayerKey {
+    fn from(val: Player) -> Self {
+        Self { uuid: val.uuid, username: val.username, eid: val.eid }
+    }
 }
 
 #[derive(Debug)]
@@ -95,5 +108,26 @@ pub fn add_length(packet_raw: Result<Vec<u8>, DatatypeError>) -> Result<Vec<u8>,
         return Ok(vec![length, packet].concat());
     }
     Err(PacketCreateError::AddLengthError)
+}
+
+pub trait Display where Self: Sized {
+    fn display(&self) -> String;
+    fn from_string(string: &str) -> Result<Self, DatatypeError>;
+}
+
+impl Display for u128 {
+    fn display(&self) -> String {
+        self.to_be_bytes()
+            .iter()
+            .map(|byte| format!("{:02x}", byte))
+            .collect::<Vec<String>>()
+            .join("")
+    }
+    fn from_string(string: &str) -> Result<Self, DatatypeError> {
+        match u128::from_str_radix(string, 16) {
+            Ok(val) => Ok(val),
+            Err(err) => Err(DatatypeError::ParseIntError(err))
+        }
+    }
 }
 

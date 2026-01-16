@@ -3,27 +3,27 @@ use crab_nbt::nbt;
 use parking_lot::Mutex;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
-use crate::protocol::{datatypes::{Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS};
+use crate::protocol::{datatypes::{Display, PlayerKey, Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS};
 
 #[derive(Debug)]
 pub struct Server {
     // uuid, username
-    pub players: HashMap<(Arc<str>, Arc<str>), (UnboundedSender<Vec<u8>>, i32)>,
+    pub players: HashMap<PlayerKey, (UnboundedSender<Vec<u8>>, i32)>,
     pub positions: HashMap<i32, (Vector3<f64>, Vector2<f32>, bool)>,
     pub eids: Vec<i32>,
 }
 
 #[derive(Debug)]
 pub enum Data {
-    Packet {data: Vec<u8>, filter: Option<(Arc<str>, Arc<str>)>},
+    Packet {data: Vec<u8>, filter: Option<PlayerKey>},
     AddPlayer {
-        player: (Arc<str>, Arc<str>),
+        player: PlayerKey,
         sender: UnboundedSender<Vec<u8>>,
         eid: i32,
         position: Vector3<f64>,
         rotation: Vector2<f32>,
     },
-    RemovePlayer {player: (Arc<str>, Arc<str>) },
+    RemovePlayer {player: PlayerKey },
     UpdatePosition {eid: i32, position: Vector3<f64>, rotation: Vector2<f32>, on_ground: bool}
 }
 
@@ -59,10 +59,10 @@ impl Server {
 
         match data {
             Data::Packet { data, filter } => {
-                for ((uuid, username), (writer, _))
+                for (key, (writer, _))
                 in lock.players.iter() {
                     if let Some(filter_ptr) = filter.clone() {
-                        if (uuid, username) == (&filter_ptr.0, &filter_ptr.1) {continue}
+                        if key == &filter_ptr {continue}
                     }
                     _ = writer.send(data.clone());
                 };
@@ -79,12 +79,12 @@ impl Server {
                 lock.positions.insert(eid, (position, rotation, true));
 
                 let mut players = Vec::new();
-                for player in lock.players.iter() {
-                    players.push((player.0.0.clone(), player.0.1.clone(), player.1.1));
-                }
+                for player in lock.players.iter() { players.push(
+                    PlayerKey { uuid: player.0.uuid, username: player.0.username.clone(), eid: player.0.eid }
+                ) }
 
-                let player_name: &str = &player.1.clone();
-                let player_uuid: &str = &player.0.clone();
+                let player_name: &str = &player.username.clone();
+                let player_uuid: &str = &player.uuid.display();
                 let player_packet = [
                     (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
                         "text": "",
@@ -97,11 +97,11 @@ impl Server {
                     }).write_unnamed().to_vec(), false).unwrap(),
                     (CLIENT_BOUND_PACKETS.player_info_update)(players).unwrap(),
                     (CLIENT_BOUND_PACKETS.summon_entity)(
-                        eid, player.0.clone(), 149, position, rotation, 0, Vector3 { x: 0.0, y: 0.0, z: 0.0 }
+                        eid, player.uuid, 149, position, rotation, 0, Vector3 { x: 0.0, y: 0.0, z: 0.0 }
                     ).unwrap(),
                 ].concat();
 
-                println!("[+] {} [{}]", player.1, player.0);
+                println!("[+] {} [{}]", player.username, player.uuid.display());
                 _ = writer.send(Data::Packet { data: player_packet, filter: Some(player) });
             },
 
@@ -109,8 +109,8 @@ impl Server {
                 let Some(eid) = lock.players.remove(&player) else {return};
                 let eid = eid.1;
 
-                let player_name: &str = &player.1.clone();
-                let player_uuid: &str = &player.0.clone();
+                let player_name: &str = &player.username.clone();
+                let player_uuid: &str = &player.uuid.display();
                 let player_packet = [
                     (CLIENT_BOUND_PACKETS.send_system_message)(nbt!("", {
                         "text": "",
@@ -121,11 +121,11 @@ impl Server {
                             {"text": player_name, "hover_event": {"action": "show_text", "value": player_uuid}}
                         ]
                     }).write_unnamed().to_vec(), false).unwrap(),
-                    (CLIENT_BOUND_PACKETS.player_info_remove)(player.0.clone()).unwrap(),
+                    (CLIENT_BOUND_PACKETS.player_info_remove)(player.uuid).unwrap(),
                     (CLIENT_BOUND_PACKETS.remove_entity)(vec![eid]).unwrap(),
                 ].concat();
 
-                println!("[-] {} [{}]", player.1, player.0);
+                println!("[-] {} [{}]", player.username, player.uuid.display());
                 _ = writer.send(Data::Packet { data: player_packet, filter: Some(player.clone()) });
 
                 lock.positions.remove(&eid);

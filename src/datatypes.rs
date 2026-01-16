@@ -1,7 +1,6 @@
 use core::str;
-use std::{io::ErrorKind, num::{self, ParseIntError}, str::Utf8Error, sync::Arc};
+use std::{io::ErrorKind, num::ParseIntError, str::Utf8Error, sync::Arc};
 
-use regex::Regex;
 use tokio::{io::AsyncReadExt, net::tcp::OwnedReadHalf};
 
 use crate::protocol::datatypes::Vector3;
@@ -62,6 +61,13 @@ impl Packet {
         Ok(output)
     }
 
+    pub fn take_slice<const AMOUNT: usize> (&mut self) -> Result<[u8; AMOUNT], DatatypeError> {
+        if self.offset + AMOUNT > self.source.len() {return Err(DatatypeError::TooSmallBuffer)} // bounds checking
+        let initial_offset = self.offset;
+        self.offset += AMOUNT;
+        Ok(unsafe {*(self.source.as_ptr().add(initial_offset) as *const [u8; AMOUNT])})
+    }
+
     pub fn decode_varint(&mut self) -> Result<i32, DatatypeError> {
         let mut position: u32 = 0;
         let mut result: i32 = 0;
@@ -86,13 +92,6 @@ impl Packet {
         };
         Ok(string)
     }
-    pub fn decode_uuid(&mut self) -> Result<String, DatatypeError> {
-        Ok(self.read_buf(16)?
-            .iter()
-            .map(|byte| format!("{:02x}", byte))
-            .collect::<Vec<String>>()
-            .join(""))
-    }
     pub fn decode_position(&mut self) -> Result<Vector3<i32>, DatatypeError> {
         let long = self.decode_long()?;
         Ok(Vector3 { 
@@ -101,24 +100,13 @@ impl Packet {
             z: (long << 26 >> 38) as i32
         })
     }
-    pub fn decode_int(&mut self) -> Result<i32, DatatypeError> {
-        Ok(i32::from_be_bytes(*self.read_buf(4)?.as_array().expect("read_buf function worked incorrectly")))
-    }
-    pub fn decode_long(&mut self) -> Result<i64, DatatypeError> {
-        Ok(i64::from_be_bytes(*self.read_buf(8)?.as_array().expect("read_buf function worked incorrectly")))
-    }
-    pub fn decode_float(&mut self) -> Result<f32, DatatypeError> {
-        Ok(f32::from_be_bytes(*self.read_buf(4)?.as_array().expect("read_buf function worked incorrectly")))
-    }
-    pub fn decode_double(&mut self) -> Result<f64, DatatypeError> {
-        Ok(f64::from_be_bytes(*self.read_buf(8)?.as_array().expect("read_buf function worked incorrectly")))
-    }
-    pub fn decode_short(&mut self) -> Result<i16, DatatypeError> {
-        Ok(i16::from_be_bytes(*self.read_buf(2)?.as_array().expect("read_buf function worked incorrectly")))
-    }
-    pub fn decode_ushort(&mut self) -> Result<u16, DatatypeError> {
-        Ok(u16::from_be_bytes(*self.read_buf(2)?.as_array().expect("read_buf function worked incorrectly")))
-    }
+    pub fn decode_int(&mut self) -> Result<i32, DatatypeError> { Ok(i32::from_be_bytes(self.take_slice::<4>()?)) }
+    pub fn decode_long(&mut self) -> Result<i64, DatatypeError> { Ok(i64::from_be_bytes(self.take_slice::<8>()?)) }
+    pub fn decode_float(&mut self) -> Result<f32, DatatypeError> { Ok(f32::from_be_bytes(self.take_slice::<4>()?)) }
+    pub fn decode_double(&mut self) -> Result<f64, DatatypeError> { Ok(f64::from_be_bytes(self.take_slice::<8>()?)) }
+    pub fn decode_short(&mut self) -> Result<i16, DatatypeError> { Ok(i16::from_be_bytes(self.take_slice::<2>()?)) }
+    pub fn decode_ushort(&mut self) -> Result<u16, DatatypeError> { Ok(u16::from_be_bytes(self.take_slice::<2>()?)) }
+    pub fn decode_uuid(&mut self) -> Result<u128, DatatypeError> { Ok(u128::from_be_bytes(self.take_slice::<16>()?)) }
 
     pub fn encode_varint(input: i32) -> Result<Vec<u8>, DatatypeError> {
         let mut value = input.clone();
@@ -138,17 +126,6 @@ impl Packet {
         result.extend(array.iter());
         Ok(result)
     }
-    pub fn encode_uuid(input: &str) -> Result<Vec<u8>, DatatypeError> {
-        let re = Regex::new(r"(..?)").unwrap();
-        let output: Result<Vec<u8>, num::ParseIntError> = re
-            .captures_iter(input.replace("-", "").as_str())
-            .map(|caps| u8::from_str_radix(&caps[0], 16))
-            .collect();
-        match output {
-            Ok(val) => Ok(val),
-            Err(e) => Err(DatatypeError::ParseIntError(e))
-        }
-    }
     pub fn encode_position(input: Vector3<i32>) -> Vec<u8> {
         Packet::encode_long(((input.x as i64 & 0x3FFFFFF) << 38)
             | ((input.z as i64 & 0x3FFFFFF) << 12)
@@ -160,4 +137,5 @@ impl Packet {
     pub fn encode_double(input: f64) -> Vec<u8> { input.to_be_bytes().to_vec() }
     pub fn encode_short(input: i16) -> Vec<u8> { input.to_be_bytes().to_vec() }
     pub fn encode_ushort(input: u16) -> Vec<u8> { input.to_be_bytes().to_vec() }
+    pub fn encode_uuid(input: u128) -> Vec<u8> { input.to_be_bytes().to_vec() }
 }
