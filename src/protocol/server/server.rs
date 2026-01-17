@@ -3,13 +3,12 @@ use crab_nbt::nbt;
 use parking_lot::Mutex;
 use tokio::sync::mpsc::{self, UnboundedSender};
 
-use crate::protocol::{datatypes::{Display, PlayerKey, Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS};
+use crate::protocol::{datatypes::{Display, PlayerKey, ServerPlayer, Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS};
 
 #[derive(Debug)]
 pub struct Server {
     // uuid, username
-    pub players: HashMap<PlayerKey, (UnboundedSender<Vec<u8>>, i32)>,
-    pub positions: HashMap<i32, (Vector3<f64>, Vector2<f32>, bool)>,
+    pub players: HashMap<PlayerKey, ServerPlayer>,
     pub eids: Vec<i32>,
 }
 
@@ -24,13 +23,12 @@ pub enum Data {
         rotation: Vector2<f32>,
     },
     RemovePlayer {player: PlayerKey },
-    UpdatePosition {eid: i32, position: Vector3<f64>, rotation: Vector2<f32>, on_ground: bool}
+    UpdatePosition {player_key: PlayerKey, position: Vector3<f64>, rotation: Vector2<f32>, on_ground: bool}
 }
 
 impl Server {
     pub fn new() -> Self { Self {
         players: HashMap::new(),
-        positions: HashMap::new(),
         eids: Vec::new(),
     }}
     pub fn setup_sender(self) -> ServerStatic {
@@ -59,8 +57,8 @@ impl Server {
 
         match data {
             Data::Packet { data, filter } => {
-                for (key, (writer, _))
-                in lock.players.iter() {
+                for (key, server_player) in lock.players.iter() {
+                    let writer = server_player.sender.clone();
                     if let Some(filter_ptr) = filter.clone() {
                         if key == &filter_ptr {continue}
                     }
@@ -75,8 +73,8 @@ impl Server {
                 position,
                 rotation
             } => {
-                lock.players.insert(player.clone(), (sender, eid));
-                lock.positions.insert(eid, (position, rotation, true));
+                lock.players.insert(player.clone(),
+                    ServerPlayer { sender, position, rotation, eid, on_ground: false });
 
                 let mut players = Vec::new();
                 for player in lock.players.iter() { players.push(
@@ -107,7 +105,7 @@ impl Server {
 
             Data::RemovePlayer { player } => {
                 let Some(eid) = lock.players.remove(&player) else {return};
-                let eid = eid.1;
+                let eid = eid.eid;
 
                 let player_name: &str = &player.username.clone();
                 let player_uuid: &str = &player.uuid.display();
@@ -128,17 +126,32 @@ impl Server {
                 println!("[-] {} [{}]", player.username, player.uuid.display());
                 _ = writer.send(Data::Packet { data: player_packet, filter: Some(player.clone()) });
 
-                lock.positions.remove(&eid);
                 lock.eids.retain(|val| val != &eid);
             },
 
             Data::UpdatePosition {
-                eid,
+                player_key,
                 position,
                 rotation,
                 on_ground
             } => {
-                todo!()
+                let Some(player) = lock.players.get_mut(&player_key) else {return};
+                let delta = Vector3 {
+                    x: position.x - player.position.x,
+                    y: position.y - player.position.y,
+                    z: position.z - player.position.z,
+                };
+
+                player.position = position;
+                player.rotation = rotation;
+                player.on_ground = on_ground;
+
+                let response = [
+                    (CLIENT_BOUND_PACKETS.update_position)( player.eid, delta, rotation, on_ground ).unwrap(),
+                    (CLIENT_BOUND_PACKETS.set_head_rotation)( player.eid, rotation.x ).unwrap(),
+                ].concat();
+
+                _ = writer.send(Data::Packet { data: response, filter: Some(player_key) })
             },
         }
     }

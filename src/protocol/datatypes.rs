@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
-use tokio::{net::tcp::OwnedReadHalf, sync::mpsc};
+use tokio::{net::tcp::OwnedReadHalf, sync::mpsc::{self, UnboundedSender}};
 
 use crate::datatypes::{DatatypeError, Packet};
 
@@ -71,9 +71,18 @@ pub struct PlayerKey {
     pub eid: i32,
 }
 
-impl From<Player> for PlayerKey {
-    fn from(val: Player) -> Self {
-        Self { uuid: val.uuid, username: val.username, eid: val.eid }
+#[derive(Debug, Clone)]
+pub struct ServerPlayer {
+    pub sender: UnboundedSender<Vec<u8>>,
+    pub eid: i32,
+    pub position: Vector3<f64>,
+    pub rotation: Vector2<f32>,
+    pub on_ground: bool,
+}
+
+impl PlayerKey {
+    pub fn from(val: &Player) -> Self {
+        Self { uuid: val.uuid, username: val.username.clone(), eid: val.eid }
     }
 }
 

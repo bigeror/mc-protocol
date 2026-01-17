@@ -106,14 +106,10 @@ fn configuration_responses() -> Responses {
 
         for player in lock.players.iter() {
             players.push(player.0.clone());
-            let player_info = match lock.positions.get(&player.1.1) {
-                Some(t) => t,
-                None => continue
-            };
 
             entity_packet.extend((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(
-                player.1.1, player.0.uuid.clone(), 149,
-                player_info.0, player_info.1, 0,
+                player.1.eid, player.0.uuid.clone(), 149,
+                player.1.position, player.1.rotation, 0,
                 Vector3 { x: 0.0, y: 0.0, z: 0.0 }
             )?);
         };
@@ -123,7 +119,7 @@ fn configuration_responses() -> Responses {
         let response = [
             (CLIENT_BOUND_PACKETS_PLAY.login)(player.eid)?,
             (CLIENT_BOUND_PACKETS_PLAY.player_info_update)(
-                [players, vec![PlayerKey::from(player.clone())]].concat())?,
+                [players, vec![PlayerKey::from(&player)]].concat())?,
             (CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)?,
             (CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)?,
             (CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)?,
@@ -156,7 +152,7 @@ fn configuration_responses() -> Responses {
 
         let writer = handler.writer.clone();
         _ = SERVER.sender.send(Data::AddPlayer {
-            player: PlayerKey::from(player.clone()),
+            player: PlayerKey::from(&player),
             sender: writer.clone(),
             eid: player.eid,
             position: player.position,

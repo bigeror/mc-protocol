@@ -189,9 +189,45 @@ create_packet_collection!(PlayClientBound,
         short (delta_pos.x * 4096.0) as i16,
         short (delta_pos.y * 4096.0) as i16,
         short (delta_pos.z * 4096.0) as i16,
-        byte ((rotation.x / 360.0) % 1.0 * 256.0) as u8,
-        byte ((rotation.y / 360.0) % 1.0 * 256.0) as u8,
+        byte ((rotation.x / 360.0).rem_euclid(1.0) * 256.0) as u8,
+        byte ((rotation.y / 360.0).rem_euclid(1.0) * 256.0) as u8,
         byte on_ground as u8,
+    )?.concat())},
+
+    set_head_rotation: |eid: i32, yaw: f32| {Ok(concat_buffer!(
+        byte 0x4C,
+        varint eid,
+        byte ((yaw / 360.0).rem_euclid(1.0) * 256.0) as u8,
+    )?.concat())},
+
+    add_metadata: |eid: i32, data: Vec<(u8, u8, Vec<u8>)>| {Ok(concat_buffer!(
+        byte 0x5C,
+        varint eid,
+        buf {
+            let mut output = Vec::new();
+            for (id, val_type, value) in data {
+                output.push(concat_buffer!(byte id, byte val_type, buf value)?.concat());
+            }
+            output.concat()
+        },
+        byte 0xFF,
+    )?.concat())},
+
+    entity_animation: |eid: i32, animation: u8| {Ok(concat_buffer!(
+        byte 0x02, varint eid, byte animation
+    )?.concat())},
+
+    set_equipment: |eid: i32, equipment: Vec<(u8, i32, i32)>| {Ok(concat_buffer!(
+        byte 0x5F,
+        varint equipment.len() as i32,
+        buf {
+            let mut output = Vec::new();
+            for (slot, amount, id) in equipment {
+                let id_varint = if amount != 0 {concat_buffer!(varint id, varint 0, varint 0)?.concat()} else {Vec::new()};
+                output.push(concat_buffer!(byte slot, varint amount, buf id_varint)?.concat());
+            }
+            output.concat()
+        }
     )?.concat())},
 );
 

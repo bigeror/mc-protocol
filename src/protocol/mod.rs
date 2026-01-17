@@ -47,7 +47,7 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
 
         match (this.player.clone(), this.status == States::Configuration || this.status == States::Play) {
             (Some(player), true) => {
-                _ = SERVER.sender.send(Data::RemovePlayer { player: PlayerKey::from(player) });
+                _ = SERVER.sender.send(Data::RemovePlayer { player: PlayerKey::from(&player) });
             },
             (_, true) => panic!("Got unexpected state: handler is in configuration / play but no player information."),
             _ => ()

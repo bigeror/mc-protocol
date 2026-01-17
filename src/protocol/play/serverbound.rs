@@ -5,7 +5,7 @@ use std::{collections::HashMap, sync::LazyLock};
 
 use tokio::time;
 
-use crate::protocol::datatypes::{Display, PlayerKey, Vector3};
+use crate::protocol::datatypes::{Display, PlayerKey, Vector2, Vector3};
 use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
 use crate::protocol::play::place_block::get_block_id;
 use crate::protocol::server::mapping::MAP;
@@ -72,12 +72,19 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         world.replace_block(position, 0);
         drop(world);
 
-        let response = [
+        let player = handler.player.as_ref().ok_or(RuntimeError::UnexpectedNone)?;
+
+        _ = handler.writer.send([
             (CLIENT_BOUND_PACKETS.block_update)(0, position)?,
             (CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)?,
+        ].concat());
+
+        let response = [
+            (CLIENT_BOUND_PACKETS.block_update)(0, position)?,
+            (CLIENT_BOUND_PACKETS.entity_animation)(player.eid, 0)?,
         ].concat();
 
-        _ = SERVER.sender.send(Data::Packet { data: response, filter: None });
+        _ = SERVER.sender.send(Data::Packet { data: response, filter: Some(PlayerKey::from(player)) });
 
         Ok(())
     });
@@ -124,22 +131,35 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             (CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)?,
         ].concat());
 
-        _ = SERVER.sender.send(Data::Packet { data: block_change, filter: Some(PlayerKey::from(player)) });
+        _ = SERVER.sender.send(Data::Packet { data: [
+            block_change,
+            (CLIENT_BOUND_PACKETS.entity_animation)(player.eid, 0)?,
+        ].concat(), filter: Some(PlayerKey::from(&player)) });
         Ok(())
     });
 
     responses.insert(0x37, |packet, handler| {
         let slot = packet.decode_short()? - 36;
         if slot < 0 || slot > 8 {return Ok(())} // listen only for hotbar changes
+        let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
 
         let count = packet.decode_varint()?;
         if count == 0 {
-            handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?.hotbar[slot as usize] = 0;
+            player.hotbar[slot as usize] = 0;
+            if player.selected_slot == slot {_ = SERVER.sender.send(Data::Packet{
+                data: (CLIENT_BOUND_PACKETS.set_equipment)(player.eid, vec![(0, count, 0)])?,
+                filter: Some(PlayerKey::from(&player))
+            })}
             return Ok(());
         }
 
         let id = packet.decode_varint()?;
-        handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?.hotbar[slot as usize] = id;
+        player.hotbar[slot as usize] = id;
+
+        if player.selected_slot == slot {_ = SERVER.sender.send(Data::Packet{
+            data: (CLIENT_BOUND_PACKETS.set_equipment)(player.eid, vec![(0, count, id)])?,
+            filter: Some(PlayerKey::from(&player))
+        })}
 
         Ok(())
     });
@@ -147,15 +167,84 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
     responses.insert(0x34, |packet, handler| {
         let slot = packet.decode_short()?;
         if slot < 0 || slot > 8 { return Err(RuntimeError::IncorrectValue); }
-        handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?.selected_slot = slot;
+        let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
+        player.selected_slot = slot;
+
+        let item = player.hotbar[slot as usize];
+        _ = SERVER.sender.send(Data::Packet {
+            data: (CLIENT_BOUND_PACKETS.set_equipment)(player.eid, vec![(0, if item != 0 {1} else {0}, item)])?,
+            filter: Some(PlayerKey::from(&player))
+        });
         Ok(())
     });
 
     responses.insert(0x1D, |packet, handler| {
-        let x = packet.decode_double()?;
-        let y = packet.decode_double()?;
-        let z = packet.decode_double()?;
+        let position = Vector3 {
+            x: packet.decode_double()?,
+            y: packet.decode_double()?,
+            z: packet.decode_double()?,
+        };
+
         let flags = packet.read_u8()?;
+        let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
+        player.position = position;
+
+        _ = SERVER.sender.send(Data::UpdatePosition {
+            player_key: PlayerKey::from(&player),
+            position, rotation: player.rotation,
+            on_ground: (flags & 0x01) != 0
+        });
+        Ok(())
+    });
+
+    responses.insert(0x1E, |packet, handler| {
+        let position = Vector3 {
+            x: packet.decode_double()?,
+            y: packet.decode_double()?,
+            z: packet.decode_double()?,
+        };
+        let rotation = Vector2 {
+            x: packet.decode_float()?,
+            y: packet.decode_float()?,
+        };
+        let flags = packet.read_u8()?;
+        let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
+        player.position = position;
+        player.rotation = rotation;
+
+        _ = SERVER.sender.send(Data::UpdatePosition {
+            player_key: PlayerKey::from(&player),
+            position, rotation,
+            on_ground: (flags & 0x01) != 0
+        });
+        Ok(())
+    });
+
+    responses.insert(0x1F, |packet, handler| {
+        let rotation = Vector2 {
+            x: packet.decode_float()?,
+            y: packet.decode_float()?,
+        };
+        let flags = packet.read_u8()?;
+        let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
+        player.rotation = rotation;
+
+        _ = SERVER.sender.send(Data::UpdatePosition {
+            player_key: PlayerKey::from(&player),
+            position: player.position, rotation,
+            on_ground: (flags & 0x01) != 0
+        });
+        Ok(())
+    });
+
+    responses.insert(0x20, |packet, handler| {
+        let flags = packet.read_u8()?;
+        let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
+        _ = SERVER.sender.send(Data::UpdatePosition {
+            player_key: PlayerKey::from(&player),
+            position: player.position, rotation: player.rotation,
+            on_ground: (flags & 0x01) != 0
+        });
         Ok(())
     });
 
