@@ -6,6 +6,7 @@ in rust. It's not made for general use, but using and contributing to it isn't p
 - Configuration / join process
 - Simple world generation / manipulation and saving changes in RAM (limited)
 - Simple chat system (join / leave messages and syncronized chat)
+- player position and animation synchronization
 
 ## Usage
 - Dev test:

@@ -24,9 +24,9 @@ macro_rules! concat_buffer {
 
 #[macro_export]
 macro_rules! create_packet_collection {
-    ($name:tt, $($field:tt : |$($arg:ident : $type:ty),*| $code:block),+ $(,)?) => {
+    ($name:tt, $($field:tt : |$($arg:ident : $type:ty),*| $code:expr),+ $(,)?) => {
         pub struct $name {
-            $(pub $field : fn($($arg : $type),*) -> Result<Vec<u8>, crate::protocol::datatypes::PacketCreateError>),+ 
+            $(pub $field : fn($($arg : $type),*) -> Result<Vec<u8>, crate::protocol::datatypes::PacketCreateError>),+
         }
         impl $name {
             pub fn init() -> $name {

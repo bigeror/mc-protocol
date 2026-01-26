@@ -10,7 +10,7 @@ use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
 use crate::protocol::play::place_block::get_block_id;
 use crate::protocol::server::mapping::MAP;
 use crate::protocol::server::server::{Data, SERVER};
-use crate::protocol::server::world::WORLD;
+use crate::protocol::server::world::world::World;
 use crate::{
     protocol::{datatypes::{Responses, RuntimeError}},
 };
@@ -68,9 +68,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let face = packet.read_u8()?;
         let sequence = packet.decode_varint()?;
 
-        let mut world = WORLD.lock();
-        world.replace_block(position, 0);
-        drop(world);
+        World::replace_block(position, 0);
 
         let player = handler.player.as_ref().ok_or(RuntimeError::UnexpectedNone)?;
 
@@ -122,9 +120,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         let (block_id, actual_pos) = get_block_id(location, cursor, face, block);
         let block_change = (CLIENT_BOUND_PACKETS.block_update)(block_id, actual_pos)?;
 
-        let mut world = WORLD.lock();
-        world.replace_block(actual_pos, block_id);
-        drop(world);
+        World::replace_block(actual_pos, block_id);
 
         _ = handler.writer.send([
             block_change.clone(),

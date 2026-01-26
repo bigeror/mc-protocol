@@ -24,7 +24,7 @@ create_packet_collection!(StatusClientBound,
             str status_text,
         }?.concat())
     },
-    ping_response: |value: i64| {Ok(concat_buffer!{ byte 1, long value }?.concat())},
+    ping_response: |value: i64| Ok(concat_buffer!{ byte 1, long value }?.concat()),
 );
 
 create_packet_collection!(ConnectClientBound,
@@ -70,7 +70,7 @@ create_packet_collection!(ConnectClientBound,
             output
         },
     }?.concat())},
-    configuration_finish: | | {Ok(concat_buffer!{byte 0x03}?.concat())},
+    configuration_finish: | | Ok(concat_buffer!{byte 0x03}?.concat()) ,
 );
 
 pub static CLIENT_BOUND_PACKETS: LazyLock<ClientBoundPackets> = LazyLock::new(|| ClientBoundPackets {
