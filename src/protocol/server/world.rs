@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
-use parking_lot::Mutex;
+
+use tokio::sync::Mutex;
 
 use crate::protocol::datatypes::Vector3;
 

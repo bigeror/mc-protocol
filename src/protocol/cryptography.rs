@@ -18,6 +18,3 @@ pub struct KeyPair {
     pub public_key_der: Vec<u8>,
     pub private_key: RsaPrivateKey
 }
-
-impl KeyPair {
-}

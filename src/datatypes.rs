@@ -1,7 +1,7 @@
 use core::str;
 use std::{io::ErrorKind, num::ParseIntError, str::Utf8Error, sync::Arc};
 
-use tokio::{io::AsyncReadExt, net::tcp::OwnedReadHalf};
+use tokio::{io::AsyncReadExt, net::tcp::OwnedReadHalf, sync::Mutex};
 
 use crate::protocol::datatypes::Vector3;
 
@@ -23,13 +23,18 @@ pub struct Packet {
 }
 
 // on reading end it returns Ok(0), which is impossible to get otherwise in packet length.
-pub async fn decode_packet_length(reader: &mut OwnedReadHalf) -> Result<i32, DatatypeError> {
+pub async fn decode_packet_length(reader: &mut OwnedReadHalf, decryptor: Option<Arc<Mutex<cfb8::Decryptor<aes::Aes128>>>>) -> Result<i32, DatatypeError> {
     let mut position: u32 = 0;
     let mut result: i32 = 0;
 
     loop {
         let current_byte = match reader.read_u8().await {
-            Ok(value) => value,
+            Ok(value) => if let Some(decryptor) = decryptor.clone() {
+                let mut encrypted_value = [value];
+                decryptor.lock().await.decrypt(&mut encrypted_value);
+                encrypted_value[0]
+            }
+            else { value },
             Err(error) => {
                 if error.kind() == ErrorKind::UnexpectedEof { return Ok(0) }
                 else { return Err(DatatypeError::StreamError) }

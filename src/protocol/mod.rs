@@ -6,9 +6,8 @@ pub mod server;
 pub mod cryptography;
 
 use core::net::SocketAddr;
-use std::panic::AssertUnwindSafe;
+use std::{panic::AssertUnwindSafe, sync::Arc};
 use futures::FutureExt;
-use rsa::errors;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, tcp::OwnedWriteHalf}, sync::mpsc,
@@ -17,19 +16,21 @@ use tokio::{
 use crate::{
     datatypes::{Packet, decode_packet_length},
     protocol::{
-        datatypes::{ Player, PlayerKey, ProtocolHandler, RuntimeError, States }, initialisation::serverbound::{configuration_response, login_response, status_response}, play::serverbound::{SERVERBOUND_PACKET_INSTANCE, play_responses}, server::server::{Data, SERVER}
+        datatypes::{ Player, PlayerKey, ProtocolHandler, RuntimeError, States }, initialisation::serverbound::{configuration_response, login_response, status_response}, play::serverbound::play_responses, server::server::{Data, SERVER}
     },
 };
 
 pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
     _ = tokio::spawn(async move {
         let (reader, writer) = client.into_split();
+        let (writer, writer_upgrader) = setup_writer(writer).await;
+
         let mut this = ProtocolHandler {
             status: States::HandShake,
-            reader,
-            writer: setup_writer(writer).await,
+            reader, writer, writer_upgrader,
             protocol_version: 0,
             player: None,
+            cipher: None,
         };
 
         let result = AssertUnwindSafe(
@@ -39,7 +40,8 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
         match result {
             Ok(val) => (),
             Err(err) => {
-                if let Some(error) = err.downcast_ref::<&str>() { println!("got fatal error: {}", error) }
+                if let Some(error) = err.downcast_ref::<&str>()
+                    { println!("got fatal error: {}", error) }
                 else { println!("got fatal error without message") }
             },
         };
@@ -56,28 +58,49 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
     })
 }
 
-async fn setup_writer(mut writer: OwnedWriteHalf) -> mpsc::UnboundedSender<Vec<u8>> {
-    let (sender, mut reader) = 
-        mpsc::unbounded_channel::<Vec<u8>>();
+async fn setup_writer(mut writer: OwnedWriteHalf)
+    -> (mpsc::UnboundedSender<Vec<u8>>,
+        mpsc::Sender<cfb8::Encryptor<aes::Aes128>>) {
+    let (sender, mut reader) = mpsc::unbounded_channel::<Vec<u8>>();
+    let (cipher_sender, mut cipher_reader) = mpsc::channel::<cfb8::Encryptor<aes::Aes128>>(2);
 
     tokio::spawn(async move {
+        let mut cipher: Option<Arc<cfb8::Encryptor<aes::Aes128>>> = None;
         loop { if let Some(mut message) = reader.recv().await {
+            if let Ok(encryptor) = cipher_reader.try_recv() { cipher = Some(Arc::new(encryptor)) }
+
             if message == vec![0] {
                 _ = writer.shutdown();
                 reader.close();
                 return;
             }
-            _ = writer.write_all(&mut message).await;
+
+            if cipher.clone().is_none() { _ = writer.write_all(&mut message).await; continue; }
+
+            let mut encryptor = cipher.unwrap();
+            let mut encrypted: Vec<u8> = Vec::new();
+            for i in message {
+                let mut out = [0u8];
+                Arc::get_mut(&mut encryptor)
+                    .expect("couldn't get cipher as mut")
+                    .encrypt_b2b(&[i], &mut out)
+                    .map_err(|err| panic!("Got {} encrypting first byte", err))
+                    .unwrap();
+                encrypted.push(out[0]);
+            }
+            cipher = Some(encryptor);
+            _ = writer.write_all(&mut encrypted).await;
         } }
     });
-    sender
+
+    (sender, cipher_sender)
 }
 
 async fn protocol_handler(address: SocketAddr, handler: &mut ProtocolHandler) {
     loop {
-        let length = match decode_packet_length(&mut handler.reader).await {
+        let length = match decode_packet_length(&mut handler.reader, handler.cipher.clone()).await {
             Ok(value) => {
-                if value == 0 { return } 
+                if value == 0 { return }
                 else { value }
             }
             Err(error) => {
@@ -101,6 +124,10 @@ async fn protocol_handler(address: SocketAddr, handler: &mut ProtocolHandler) {
             }
         };
 
+        if let Some(decryptor) = handler.cipher.clone() {
+            for block in buffer.chunks_mut(1) { decryptor.lock().await .decrypt(block) }
+        }
+
         let mut packet = Packet::new(buffer);
         if let Err(err) = handle_packet(handler, &mut packet).await {
             eprintln!("runtime error handling packet: {:?}, client disconnected.", err);
@@ -117,7 +144,7 @@ async fn handle_packet(this: &mut ProtocolHandler, packet: &mut Packet) -> Resul
         States::Status => status_response(protocol, packet, this).await,
         States::Login => login_response(protocol, packet, this).await,
         States::Configuration => configuration_response(protocol, packet, this).await,
-        States::Play => play_responses(protocol, packet, this),
+        States::Play => play_responses(protocol, packet, this).await,
     }
 }
 

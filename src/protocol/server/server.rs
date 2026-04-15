@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock}};
 use crab_nbt::nbt;
-use parking_lot::Mutex;
-use tokio::sync::mpsc::{self, UnboundedSender};
+use tokio::sync::{Mutex, mpsc::{self, UnboundedSender}};
 
 use crate::protocol::{datatypes::{Display, PlayerKey, ServerPlayer, Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS};
 
@@ -42,18 +41,20 @@ impl Server {
                 Some(val) => val,
                 None => panic!("Server reader was closed!")
             };
-            Self::handle_data(data, mutex_clone.clone(), sender_clone.clone());
+            Self::handle_data(data, mutex_clone.clone(), sender_clone.clone()).await;
         }});
         ServerStatic { sender, mutex }
     }
+
     pub fn get_push_eid(&mut self) -> i32 {
         let eid = match self.eids.iter().max()
             {Some(val) => *val + 1, None => 0};
         self.eids.push(eid);
         eid
     }
-    pub fn handle_data(data: Data, mutex: Arc<Mutex<Server>>, writer: UnboundedSender<Data>) {
-        let mut lock = mutex.lock();
+
+    pub async fn handle_data(data: Data, mutex: Arc<Mutex<Server>>, writer: UnboundedSender<Data>) {
+        let mut lock = mutex.lock().await;
 
         match data {
             Data::Packet { data, filter } => {

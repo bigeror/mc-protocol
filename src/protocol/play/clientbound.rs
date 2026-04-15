@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
+use tokio::sync::MutexGuard;
 
-use crate::{concat_buffer, create_packet_collection, datatypes::Packet, protocol::{datatypes::{PlayerKey, Vector2, Vector3}, server::world::WORLD}};
+use crate::{concat_buffer, create_packet_collection, datatypes::Packet, protocol::{datatypes::{PlayerKey, Vector2, Vector3}, server::world::World}};
 
 create_packet_collection!(PlayClientBound,
     login: |eid: i32| {Ok(concat_buffer!{
@@ -80,12 +81,10 @@ create_packet_collection!(PlayClientBound,
     chunk_batch_finish: |amount: i32| {Ok(concat_buffer!(byte 0x0B, varint amount)?.concat())},
     keepalive: |id: i64| {Ok(concat_buffer!(byte 0x26, long id)?.concat())},
 
-    send_filled_chunk: |position: Vector2<i32>| {
+    send_filled_chunk: |position: Vector2<i32>, world: &mut MutexGuard<World>| {
         let mut sections_data = Vec::new();
         for i in 0..24 {
-            let mut world = WORLD.lock();
             let section = world.get_section(Vector3 { x: position.x, y: i, z: position.y });
-            drop(world);
 
             sections_data.extend(concat_buffer!(
                 ushort section.block_count as u16, // blocks in section

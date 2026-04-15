@@ -15,7 +15,7 @@ use crate::protocol::{
     datatypes::RuntimeError
 };
 
-pub fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+pub async fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
     -> Result<(), RuntimeError> {
     match protocol {
     0x1B => {
@@ -68,9 +68,8 @@ pub fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut ProtocolH
         let face = packet.read_u8()?;
         let sequence = packet.decode_varint()?;
 
-        let mut world = WORLD.lock();
+        let mut world = WORLD.lock().await;
         world.replace_block(position, 0);
-        drop(world);
 
         let player = handler.player.as_ref().ok_or(RuntimeError::UnexpectedNone)?;
 
@@ -122,9 +121,8 @@ pub fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut ProtocolH
         let (block_id, actual_pos) = get_block_id(location, cursor, face, block);
         let block_change = (CLIENT_BOUND_PACKETS.block_update)(block_id, actual_pos)?;
 
-        let mut world = WORLD.lock();
+        let mut world = WORLD.lock().await;
         world.replace_block(actual_pos, block_id);
-        drop(world);
 
         _ = handler.writer.send([
             block_change.clone(),

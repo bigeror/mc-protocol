@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
-use tokio::{net::tcp::OwnedReadHalf, sync::mpsc::{self, UnboundedSender}};
+use tokio::{net::tcp::OwnedReadHalf, sync::{Mutex, mpsc::{self, UnboundedSender}}};
 
 use crate::datatypes::{DatatypeError, Packet};
 
@@ -28,6 +28,7 @@ pub enum RuntimeError {
     AuthError,
     RsaError(rsa::Error),
 }
+
 impl From<PacketCreateError> for RuntimeError {
     fn from(error: PacketCreateError) -> Self { Self::PacketCreateError(error) }
 }
@@ -59,6 +60,8 @@ pub struct ProtocolHandler {
     pub reader: OwnedReadHalf,
     pub writer: mpsc::UnboundedSender<Vec<u8>>,
     pub protocol_version: i32,
+    pub cipher: Option<Arc<Mutex<cfb8::Decryptor<aes::Aes128>>>>,
+    pub writer_upgrader: mpsc::Sender<cfb8::Encryptor<aes::Aes128>>,
     pub player: Option<Player>,
 }
 
