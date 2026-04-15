@@ -1,57 +1,38 @@
-use std::{collections::HashMap, sync::{Arc, LazyLock}};
+use std::sync::Arc;
 use crab_nbt::nbt;
-use rand::random;
-use crate::protocol::{Player, States, 
-        datatypes::{Display, PlayerKey, Responses, RuntimeError, Vector2, Vector3}, 
-        initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, 
-        play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::{Data, SERVER}
-    };
+use rand::{Rng, random};
+use rsa::Pkcs1v15Encrypt;
+use sha1::Digest;
+use crate::{datatypes::Packet, protocol::{Player, States, cryptography::ENCRYPT_KEY_PAIR, datatypes::{Display, PlayerKey, ProtocolHandler,  RuntimeError, Vector2, Vector3}, initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::server::{Data, SERVER}}};
 
-pub struct ServerBoundPackets {
-    pub status: Responses,
-    pub login: Responses,
-    pub configuration: Responses,
-    pub play: Responses,
-}
-
-impl ServerBoundPackets {
-    fn new() -> Self {
-        ServerBoundPackets {
-            status: status_responses(),
-            login: login_responses(),
-            configuration: configuration_responses(),
-            play: HashMap::new(),
-        }
-    }
-}
-
-pub static SERVER_BOUND_PACKETS_INSTANCE: LazyLock<ServerBoundPackets> = LazyLock::new(ServerBoundPackets::new);
-
-fn status_responses() -> Responses {
-    let mut responses: Responses = HashMap::new();
-
-    responses.insert( 0x00, |packet, handler| {
+pub async fn status_response(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+    -> Result<(), RuntimeError> {
+    match protocol {
+    0x00 => {
         let response = (CLIENT_BOUND_PACKETS.status.status_response)()?;
         _ = handler.writer.send(response);
         Ok(())
-    });
+    },
 
-    responses.insert( 0x01, |packet, handler| {
+    0x01 => {
         let response = (CLIENT_BOUND_PACKETS.status.ping_response)(packet.decode_long()?)?;
         _ = handler.writer.send(response);
         Ok(())
-    });
-
-    responses
+    },
+    _ => Err(RuntimeError::IncorrectProtocol)
+    }
 }
 
-fn login_responses() -> Responses {
-    let mut responses: Responses = HashMap::new();
-
-    responses.insert( 0x00, |packet, handler| {
+pub async fn login_response(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+    -> Result<(), RuntimeError> {
+    match protocol {
+    0x00 => {
         let username: Arc<str> = packet.decode_string()?.into();
         let uuid = packet.decode_uuid()?;
         let eid = SERVER.mutex.lock().get_push_eid();
+
+        let mut verify_token = [0u8; 64];
+        rand::rng().fill(&mut verify_token);
 
         handler.player = Some(Player {
             eid: eid,
@@ -61,44 +42,73 @@ fn login_responses() -> Responses {
             hotbar: [0; 9],
             selected_slot: 0,
             position: Vector3 { x: 0.0, y: 128.0, z: 0.0 },
-            rotation: Vector2 { x: 0.0, y: 0.0 }
+            rotation: Vector2 { x: 0.0, y: 0.0 },
+            verify_token: verify_token,
         });
 
-        let response = (CLIENT_BOUND_PACKETS.connect.login_success)(username, uuid)?;
-        _ = handler.writer.send(response);
-        Ok(())
-    });
+        let response = (CLIENT_BOUND_PACKETS.connect.encryption_request)(
+            ENCRYPT_KEY_PAIR.public_key_der.clone(),
+            verify_token.to_vec(), true
+        )?;
 
-    responses.insert( 0x03, |packet, handler| {
+        // let response = (CLIENT_BOUND_PACKETS.connect.login_success)(username, uuid)?;
+        _ = handler.writer.send(response);
+        println!("started encryption");
+        Ok(())
+    },
+
+    0x01 => { // encryption response (auth + enable encrypt)
+        let shared_secret_length = packet.decode_varint()? as usize;
+        let shared_secret = packet.read_buf(shared_secret_length)?;
+
+        let verify_token_encrypted_length = packet.decode_varint()? as usize;
+        let verify_token_encrypted = packet.read_buf(verify_token_encrypted_length)?;
+        let verify_token = ENCRYPT_KEY_PAIR.private_key
+            .decrypt(Pkcs1v15Encrypt, &verify_token_encrypted)?;
+
+        if verify_token != handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?
+            .verify_token { return Err(RuntimeError::IncorrectEncryptionResponse) }
+
+        let hash: [u8; 20] = sha1::Sha1::new()
+            .chain_update(shared_secret.clone())
+            .chain_update(&ENCRYPT_KEY_PAIR.public_key_der)
+            .finalize().into();
+        let hex = num_bigint::BigInt::from_signed_bytes_be(&hash).to_str_radix(16);
+
+
+        Ok(())
+    },
+
+    0x03 => {
         handler.status = States::Configuration;
         Ok(())
-    });
-
-    responses
+    },
+    _ => Err(RuntimeError::IncorrectProtocol)
+    }
 }
 
-fn configuration_responses() -> Responses {
-    let mut responses: Responses = HashMap::new();
-
-    responses.insert( 0x00, |packet, handler| {
+pub async fn configuration_response(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+    -> Result<(), RuntimeError> {
+    match protocol {
+    0x00 => {
         let response = [
             (CLIENT_BOUND_PACKETS.connect.plugin_message)()?,
             (CLIENT_BOUND_PACKETS.connect.send_datapacks)()?,
         ].concat();
         _ = handler.writer.send(response);
         Ok(())
-    });
+    },
 
-    responses.insert( 0x07, |packet, handler| {
+    0x07 => {
         let response = [
             default_registry_data()?,
             (CLIENT_BOUND_PACKETS.connect.configuration_finish)()?,
         ].concat();
         _ = handler.writer.send(response);
         Ok(())
-    });
+    },
 
-    responses.insert( 0x03, |packet, handler| {
+    0x03 => {
         let player = handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?;
         let mut players = Vec::new();
         let mut entity_packet = Vec::new();
@@ -161,7 +171,7 @@ fn configuration_responses() -> Responses {
 
         handler.status = States::Play;
         Ok(())
-    });
-
-    responses
+    },
+    _ => Ok(())
+    }
 }

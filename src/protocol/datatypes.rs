@@ -24,12 +24,18 @@ pub enum RuntimeError {
     UnexpectedNone,
     IncorrectKeepalive,
     IncorrectValue,
+    IncorrectEncryptionResponse,
+    AuthError,
+    RsaError(rsa::Error),
 }
 impl From<PacketCreateError> for RuntimeError {
     fn from(error: PacketCreateError) -> Self { Self::PacketCreateError(error) }
 }
 impl From<DatatypeError> for RuntimeError {
     fn from(error: DatatypeError) -> Self { Self::DecodeError(error) }
+}
+impl From<rsa::Error> for RuntimeError {
+    fn from(error: rsa::Error) -> Self { Self::RsaError(error) }
 }
 
 pub type Responses = HashMap<u8, fn(&mut Packet, &mut ProtocolHandler) -> Result<(), RuntimeError>>;
@@ -41,6 +47,10 @@ pub enum States {
     Login,
     Configuration,
     Play,
+}
+
+#[derive(Debug)]
+pub struct EncryptedSender {
 }
 
 #[derive(Debug)]
@@ -62,6 +72,7 @@ pub struct Player {
     pub selected_slot: i16,
     pub position: Vector3<f64>,
     pub rotation: Vector2<f32>,
+    pub verify_token: [u8; 64],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

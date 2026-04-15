@@ -1,28 +1,28 @@
 use crab_nbt::nbt;
 use rand::random;
 use std::time::Duration;
-use std::{collections::HashMap, sync::LazyLock};
 
 use tokio::time;
 
-use crate::protocol::datatypes::{Display, PlayerKey, Vector2, Vector3};
-use crate::protocol::play::clientbound::CLIENT_BOUND_PACKETS;
-use crate::protocol::play::place_block::get_block_id;
-use crate::protocol::server::mapping::MAP;
-use crate::protocol::server::server::{Data, SERVER};
-use crate::protocol::server::world::WORLD;
-use crate::{
-    protocol::{datatypes::{Responses, RuntimeError}},
+use crate::datatypes::Packet;
+use crate::protocol::{
+    datatypes::{Display, PlayerKey, ProtocolHandler, Vector2, Vector3},
+    play::clientbound::CLIENT_BOUND_PACKETS,
+    play::place_block::get_block_id,
+    server::mapping::MAP,
+    server::server::{Data, SERVER},
+    server::world::WORLD,
+    datatypes::RuntimeError
 };
 
-pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
-    let mut responses: Responses = HashMap::new();
-
-    responses.insert( 0x1B, |packet, handler| {
+pub fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+    -> Result<(), RuntimeError> {
+    match protocol {
+    0x1B => {
         let arrived_keepalive = packet.decode_long()?;
         let player = handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?;
-        if arrived_keepalive != player.keepalive_num { 
-            return Err(RuntimeError::IncorrectKeepalive) 
+        if arrived_keepalive != player.keepalive_num {
+            return Err(RuntimeError::IncorrectKeepalive)
         }
 
         let new_keepalive: i64 = random();
@@ -39,9 +39,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         });
 
         Ok(())
-    });
+    },
 
-    responses.insert( 0x08, |packet, handler| {
+    0x08 => {
         let message = packet.decode_string()?;
         let player = handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?;
         let username: &str = &player.username;
@@ -60,9 +60,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
 
         _ = SERVER.sender.send(Data::Packet { data: response, filter: None });
         Ok(())
-    });
+    },
 
-    responses.insert( 0x28, |packet, handler| {
+    0x28 => {
         let status = packet.decode_varint()?;
         let position = packet.decode_position()?;
         let face = packet.read_u8()?;
@@ -87,9 +87,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         _ = SERVER.sender.send(Data::Packet { data: response, filter: Some(PlayerKey::from(player)) });
 
         Ok(())
-    });
+    },
 
-    responses.insert( 0x3F, |packet, handler| {
+    0x3F => {
         let hand = packet.decode_varint()?;
         let location = packet.decode_position()?;
         let face = packet.decode_varint()?;
@@ -136,9 +136,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             (CLIENT_BOUND_PACKETS.entity_animation)(player.eid, 0)?,
         ].concat(), filter: Some(PlayerKey::from(&player)) });
         Ok(())
-    });
+    },
 
-    responses.insert(0x37, |packet, handler| {
+    0x37 => {
         let slot = packet.decode_short()? - 36;
         if slot < 0 || slot > 8 {return Ok(())} // listen only for hotbar changes
         let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
@@ -162,9 +162,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
         })}
 
         Ok(())
-    });
+    },
 
-    responses.insert(0x34, |packet, handler| {
+    0x34 => {
         let slot = packet.decode_short()?;
         if slot < 0 || slot > 8 { return Err(RuntimeError::IncorrectValue); }
         let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
@@ -176,9 +176,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             filter: Some(PlayerKey::from(&player))
         });
         Ok(())
-    });
+    },
 
-    responses.insert(0x1D, |packet, handler| {
+    0x1D => {
         let position = Vector3 {
             x: packet.decode_double()?,
             y: packet.decode_double()?,
@@ -195,9 +195,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             on_ground: (flags & 0x01) != 0
         });
         Ok(())
-    });
+    },
 
-    responses.insert(0x1E, |packet, handler| {
+    0x1E => {
         let position = Vector3 {
             x: packet.decode_double()?,
             y: packet.decode_double()?,
@@ -218,9 +218,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             on_ground: (flags & 0x01) != 0
         });
         Ok(())
-    });
+    },
 
-    responses.insert(0x1F, |packet, handler| {
+    0x1F => {
         let rotation = Vector2 {
             x: packet.decode_float()?,
             y: packet.decode_float()?,
@@ -235,9 +235,9 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             on_ground: (flags & 0x01) != 0
         });
         Ok(())
-    });
+    },
 
-    responses.insert(0x20, |packet, handler| {
+    0x20 => {
         let flags = packet.read_u8()?;
         let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
         _ = SERVER.sender.send(Data::UpdatePosition {
@@ -246,7 +246,7 @@ pub static SERVERBOUND_PACKET_INSTANCE: LazyLock<Responses> = LazyLock::new(|| {
             on_ground: (flags & 0x01) != 0
         });
         Ok(())
-    });
-
-    responses
-});
+    },
+    _ => Ok(())
+    }
+}

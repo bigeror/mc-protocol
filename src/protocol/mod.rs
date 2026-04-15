@@ -3,10 +3,12 @@ mod play;
 mod macros;
 pub mod datatypes;
 pub mod server;
+pub mod cryptography;
 
 use core::net::SocketAddr;
 use std::panic::AssertUnwindSafe;
 use futures::FutureExt;
+use rsa::errors;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpStream, tcp::OwnedWriteHalf}, sync::mpsc,
@@ -15,10 +17,7 @@ use tokio::{
 use crate::{
     datatypes::{Packet, decode_packet_length},
     protocol::{
-        datatypes::{ Player, PlayerKey, ProtocolHandler, RuntimeError, States },
-        initialisation::serverbound::SERVER_BOUND_PACKETS_INSTANCE as SERVER_BOUND_PACKETS_INSTANCE_INIT, 
-        play::serverbound::SERVERBOUND_PACKET_INSTANCE,
-        server::server::{Data, SERVER}
+        datatypes::{ Player, PlayerKey, ProtocolHandler, RuntimeError, States }, initialisation::serverbound::{configuration_response, login_response, status_response}, play::serverbound::{SERVERBOUND_PACKET_INSTANCE, play_responses}, server::server::{Data, SERVER}
     },
 };
 
@@ -40,7 +39,7 @@ pub fn protocol_handler_main(client: TcpStream, address: SocketAddr) {
         match result {
             Ok(val) => (),
             Err(err) => {
-                if let Some(error) = err.downcast_ref::<&str>() { println!("got fatal error: {}", error) } 
+                if let Some(error) = err.downcast_ref::<&str>() { println!("got fatal error: {}", error) }
                 else { println!("got fatal error without message") }
             },
         };
@@ -111,32 +110,15 @@ async fn protocol_handler(address: SocketAddr, handler: &mut ProtocolHandler) {
 }
 
 async fn handle_packet(this: &mut ProtocolHandler, packet: &mut Packet) -> Result<(), RuntimeError> {
-    let mut error: Result<(), RuntimeError> = Ok(());
     let protocol = packet.read_u8()?;
 
-    if this.status == States::HandShake {
-        return handle_handshake(this, packet, protocol);
-    } else if this.status == States::Status {
-        error = SERVER_BOUND_PACKETS_INSTANCE_INIT.status.get(&protocol)
-            .ok_or(RuntimeError::IncorrectProtocol)? (packet, this);
-    } else if this.status == States::Login {
-        error = match SERVER_BOUND_PACKETS_INSTANCE_INIT.login.get(&protocol) {
-            Some(func) => func(packet, this),
-            None => Ok(()),
-        }
-    } else if this.status == States::Configuration {
-        error = match SERVER_BOUND_PACKETS_INSTANCE_INIT.configuration.get(&protocol) {
-            Some(func) => func(packet, this),
-            None => Ok(()),
-        }
-    } else if this.status == States::Play {
-        error = match  SERVERBOUND_PACKET_INSTANCE.get(&protocol) {
-            Some(func) => func(packet, this),
-            None => Ok(()),
-        }
+    match this.status {
+        States::HandShake => handle_handshake(this, packet, protocol),
+        States::Status => status_response(protocol, packet, this).await,
+        States::Login => login_response(protocol, packet, this).await,
+        States::Configuration => configuration_response(protocol, packet, this).await,
+        States::Play => play_responses(protocol, packet, this),
     }
-
-    error
 }
 
 fn handle_handshake( this: &mut ProtocolHandler, packet: &mut Packet, protocol: u8 ) -> Result<(), RuntimeError> {

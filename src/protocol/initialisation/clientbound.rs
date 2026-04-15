@@ -28,6 +28,15 @@ create_packet_collection!(StatusClientBound,
 );
 
 create_packet_collection!(ConnectClientBound,
+    encryption_request: |public_key: Vec<u8>, verify_token: Vec<u8>, should_authenticate: bool| {Ok(concat_buffer!{
+        byte 1,
+        str "", // server id
+        varint public_key.len() as i32,
+        buf public_key,
+        varint verify_token.len() as i32,
+        buf verify_token,
+        byte should_authenticate as u8,
+    }?.concat())},
     login_success: |username: Arc<str>, uuid: u128| {Ok(concat_buffer!{
         byte 2,
         uuid uuid,
