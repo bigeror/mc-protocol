@@ -148,15 +148,6 @@ pub async fn configuration_response(protocol: u8, packet: &mut Packet, handler: 
             (CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)?,
             (CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)?,
             entity_packet,
-            {
-                let mut output: Vec<u8> = Vec::new();
-                for x in -5..5 {for y in -5..5 {
-                    let mut world = WORLD.lock().await;
-                    output.extend((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)(Vector2 { x, y }, &mut world)?);
-                }}
-                output
-            },
-            // (CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(9)),
             (CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
                 player.position,
                 Vector3 { x: 0.0, y: 1.0, z: 0.0 },
@@ -174,6 +165,29 @@ pub async fn configuration_response(protocol: u8, packet: &mut Packet, handler: 
             }).write_unnamed().to_vec(), false)?,
         ].concat();
         _ = handler.writer.send(response);
+        let cloned_writer = handler.writer.clone();
+
+        tokio::spawn(async move {
+            let max_radius = 7;
+            let mut coordinates: Vec<(i32, i32)> = Vec::new();
+
+            coordinates.push((0, 0));
+            for r in 1i32..max_radius {
+                for x in -r..=r { coordinates.push((x, -r)); }
+                for y in (-r + 1)..=(r - 1) { coordinates.push((r, y)); }
+                for x in ( -r..=r ).rev() { coordinates.push((x, r)); }
+                for y in ((-r + 1)..=(r - 1)).rev() { coordinates.push((-r, y)); }
+            }
+
+            for coordinate in coordinates {
+                let mut world = WORLD.lock().await;
+                _ = cloned_writer.send((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)
+                    (Vector2 { x: coordinate.0, y: coordinate.1 }, &mut world)
+                    .expect("Couldn't construct filled chunk"));
+            }
+
+            _ = cloned_writer.send((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(49).expect("Couldn't construct batch finish packet"));
+        });
 
         let writer = handler.writer.clone();
         _ = SERVER.sender.send(Data::AddPlayer {

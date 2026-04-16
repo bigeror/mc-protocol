@@ -6,11 +6,13 @@ pub mod server;
 pub mod cryptography;
 
 use core::net::SocketAddr;
-use std::{panic::AssertUnwindSafe, sync::Arc};
+use std::{hash::Hash, panic::AssertUnwindSafe, sync::Arc};
+use aes::cipher::{Array, consts::U1};
+use cfb8::cipher::StreamCipher;
 use futures::FutureExt;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpStream, tcp::OwnedWriteHalf}, sync::mpsc,
+    net::{TcpStream, tcp::OwnedWriteHalf}, sync::{Mutex, mpsc}, time::Instant,
 };
 
 use crate::{
@@ -65,9 +67,10 @@ async fn setup_writer(mut writer: OwnedWriteHalf)
     let (cipher_sender, mut cipher_reader) = mpsc::channel::<cfb8::Encryptor<aes::Aes128>>(2);
 
     tokio::spawn(async move {
-        let mut cipher: Option<Arc<cfb8::Encryptor<aes::Aes128>>> = None;
+        let mut cipher: Option<Arc<Mutex<cfb8::Encryptor<aes::Aes128>>>> = None;
         loop { if let Some(mut message) = reader.recv().await {
-            if let Ok(encryptor) = cipher_reader.try_recv() { cipher = Some(Arc::new(encryptor)) }
+            if cipher.is_none() && let Ok(encryptor) = cipher_reader.try_recv()
+                { cipher = Some(Arc::new(Mutex::new(encryptor))) }
 
             if message == vec![0] {
                 _ = writer.shutdown();
@@ -77,19 +80,13 @@ async fn setup_writer(mut writer: OwnedWriteHalf)
 
             if cipher.clone().is_none() { _ = writer.write_all(&mut message).await; continue; }
 
-            let mut encryptor = cipher.unwrap();
-            let mut encrypted: Vec<u8> = Vec::new();
-            for i in message {
-                let mut out = [0u8];
-                Arc::get_mut(&mut encryptor)
-                    .expect("couldn't get cipher as mut")
-                    .encrypt_b2b(&[i], &mut out)
-                    .map_err(|err| panic!("Got {} encrypting first byte", err))
-                    .unwrap();
-                encrypted.push(out[0]);
+            let cipher_clone = cipher.clone().unwrap();
+            let mut cipher = cipher_clone.lock().await;
+            for chunk in message.chunks(2 << 10) {
+                let mut out: Vec<u8> = vec![0u8; chunk.len()];
+                cipher.encrypt_b2b(chunk, &mut out).unwrap();
+                _ = writer.write_all(&out).await;
             }
-            cipher = Some(encryptor);
-            _ = writer.write_all(&mut encrypted).await;
         } }
     });
 
