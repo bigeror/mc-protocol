@@ -4,8 +4,9 @@ use cfb8::{Decryptor, Encryptor};
 use crab_nbt::nbt;
 use rand::{Rng, random};
 use rsa::Pkcs1v15Encrypt;
+use sha1::Digest;
 use tokio::sync::Mutex;
-use crate::{datatypes::Packet as SourcePacket, protocol::{Player, States, cryptography::ENCRYPT_KEY_PAIR, datatypes::{Display, PlayerKey, ProtocolHandler,  RuntimeError, Vector2, Vector3}, initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{server::{Data, SERVER}, world::WORLD}}};
+use crate::{datatypes::Packet as SourcePacket, protocol::{Player, States, cryptography::ENCRYPT_KEY_PAIR, datatypes::{Display, MojangResponse, PlayerKey, ProtocolHandler, RuntimeError, Vector2, Vector3}, initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{server::{Data, SERVER}, world::WORLD}}};
 
 use crate::protocol::datatypes::SendPacket;
 use SendPacket::SendPacket as Packet;
@@ -49,11 +50,12 @@ pub async fn login_response(protocol: u8, packet: &mut SourcePacket, handler: &m
             position: Vector3 { x: 0.0, y: 128.0, z: 0.0 },
             rotation: Vector2 { x: 0.0, y: 0.0 },
             verify_token: verify_token,
+            properties: vec![],
         });
 
         let response = (CLIENT_BOUND_PACKETS.connect.encryption_request)(
             ENCRYPT_KEY_PAIR.public_key_der.clone(),
-            verify_token.to_vec(), false
+            verify_token.to_vec(), true
         )?;
 
         _ = handler.writer.send(Packet(response));
@@ -61,6 +63,8 @@ pub async fn login_response(protocol: u8, packet: &mut SourcePacket, handler: &m
     },
 
     0x01 => { // encryption response (auth + enable encrypt)
+        let player = handler.player.as_mut().ok_or(RuntimeError::UnexpectedNone)?;
+
         let shared_secret_length = packet.decode_varint()? as usize;
         let shared_secret_encrypted = packet.read_buf(shared_secret_length)?;
         let shared_secret = ENCRYPT_KEY_PAIR.private_key
@@ -73,14 +77,21 @@ pub async fn login_response(protocol: u8, packet: &mut SourcePacket, handler: &m
         let verify_token = ENCRYPT_KEY_PAIR.private_key
             .decrypt(Pkcs1v15Encrypt, &verify_token_encrypted)?;
 
-        if verify_token != handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?
-            .verify_token { return Err(RuntimeError::IncorrectEncryptionResponse) }
+        if verify_token != player.verify_token { return Err(RuntimeError::IncorrectEncryptionResponse) }
 
-        // let hash: [u8; 20] = sha1::Sha1::new()
-        //     .chain_update(shared_secret.clone())
-        //     .chain_update(&ENCRYPT_KEY_PAIR.public_key_der)
-        //     .finalize().into();
-        // let hex = num_bigint::BigInt::from_signed_bytes_be(&hash).to_str_radix(16);
+        let hash: [u8; 20] = sha1::Sha1::new()
+            .chain_update(shared_secret.clone())
+            .chain_update(&ENCRYPT_KEY_PAIR.public_key_der)
+            .finalize().into();
+        let hash = num_bigint::BigInt::from_signed_bytes_be(&hash).to_str_radix(16);
+
+        let response = reqwest::get(format!(
+                "https://sessionserver.mojang.com/session/minecraft/hasJoined?username={}&serverId={}",
+                player.username, hash
+            )).await?;
+
+        let response: MojangResponse = response.json().await?;
+        player.properties = response.properties.clone();
 
         // upgrade the sender
         _ = handler.writer.send(SendPacket::UpgradeSender(Encryptor::<aes::Aes128>::new_from_slices(&shared_secret, &shared_secret)
@@ -90,8 +101,7 @@ pub async fn login_response(protocol: u8, packet: &mut SourcePacket, handler: &m
         handler.cipher = Some(Arc::new(Mutex::new(Decryptor::<aes::Aes128>::new_from_slices(&shared_secret, &shared_secret)
                 .map_err(|_| RuntimeError::IncorrectEncryptionResponse)?)));
 
-        let player = handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?;
-        let response = (CLIENT_BOUND_PACKETS.connect.login_success)(player.username, player.uuid)?;
+        let response = (CLIENT_BOUND_PACKETS.connect.login_success)(player.username.clone(), player.uuid, response.properties)?;
         _ = handler.writer.send(Packet(response));
         Ok(())
     },
@@ -129,10 +139,10 @@ pub async fn configuration_response(protocol: u8, packet: &mut SourcePacket, han
         let player = handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?;
         let mut players = Vec::new();
         let mut entity_packet = Vec::new();
-        let lock = SERVER.mutex.lock().await;
+        let server = SERVER.mutex.lock().await;
 
-        for player in lock.players.iter() {
-            players.push(player.0.clone());
+        for player in server.players.iter() {
+            players.push((player.0.clone(), player.1.properties.clone()));
 
             entity_packet.extend((CLIENT_BOUND_PACKETS_PLAY.summon_entity)(
                 player.1.eid, player.0.uuid.clone(), 149,
@@ -146,7 +156,7 @@ pub async fn configuration_response(protocol: u8, packet: &mut SourcePacket, han
         let response = [
             (CLIENT_BOUND_PACKETS_PLAY.login)(player.eid)?,
             (CLIENT_BOUND_PACKETS_PLAY.player_info_update)(
-                [players, vec![PlayerKey::from(&player)]].concat())?,
+                [players, vec![(PlayerKey::from(&player), player.properties.clone())]].concat())?,
             (CLIENT_BOUND_PACKETS_PLAY.game_event)(13, 0.0)?,
             (CLIENT_BOUND_PACKETS_PLAY.set_center_chunk)(0, 0)?,
             (CLIENT_BOUND_PACKETS_PLAY.keepalive)(player.keepalive_num)?,
@@ -182,7 +192,18 @@ pub async fn configuration_response(protocol: u8, packet: &mut SourcePacket, han
                 for y in ((-r + 1)..=(r - 1)).rev() { coordinates.push((-r, y)); }
             }
 
+            let mut n = 0;
             for coordinate in coordinates {
+                n += 1;
+                if n == 9 {
+                    _ = cloned_writer.send(SendPacket::LowPriority(
+                    (CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
+                        player.position,
+                        Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                        player.rotation,
+                        None
+                    ).expect("Couldn't construct teleport packet")));
+                }
                 let mut world = WORLD.lock().await;
                 _ = cloned_writer.send(SendPacket::LowPriority((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)
                     (Vector2 { x: coordinate.0, y: coordinate.1 }, &mut world)
@@ -190,13 +211,6 @@ pub async fn configuration_response(protocol: u8, packet: &mut SourcePacket, han
             }
 
             _ = cloned_writer.send(SendPacket::LowPriority((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(49).expect("Couldn't construct batch finish packet")));
-            _ = cloned_writer.send(SendPacket::LowPriority(
-            (CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
-                player.position,
-                Vector3 { x: 0.0, y: 1.0, z: 0.0 },
-                player.rotation,
-                None
-            ).expect("Couldn't construct teleport packet")));
         });
 
         let writer = handler.writer.clone();
@@ -206,6 +220,7 @@ pub async fn configuration_response(protocol: u8, packet: &mut SourcePacket, han
             eid: player.eid,
             position: player.position,
             rotation: player.rotation,
+            properties: player.properties
         });
 
         handler.status = States::Play;

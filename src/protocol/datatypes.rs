@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
 use tokio::{net::tcp::OwnedReadHalf, sync::{Mutex, mpsc::{self, UnboundedSender}}};
+use serde::Deserialize;
 
 use crate::datatypes::{DatatypeError, Packet};
 
@@ -27,6 +28,7 @@ pub enum RuntimeError {
     IncorrectEncryptionResponse,
     AuthError,
     RsaError(rsa::Error),
+    HttpError(reqwest::Error),
 }
 
 impl From<PacketCreateError> for RuntimeError {
@@ -37,6 +39,9 @@ impl From<DatatypeError> for RuntimeError {
 }
 impl From<rsa::Error> for RuntimeError {
     fn from(error: rsa::Error) -> Self { Self::RsaError(error) }
+}
+impl From<reqwest::Error> for RuntimeError {
+    fn from(error: reqwest::Error) -> Self { Self::HttpError(error) }
 }
 
 pub type Responses = HashMap<u8, fn(&mut Packet, &mut ProtocolHandler) -> Result<(), RuntimeError>>;
@@ -56,6 +61,20 @@ pub enum SendPacket {
     LowPriority(Vec<u8>),
     UpgradeSender(cfb8::Encryptor<aes::Aes128>),
     TerminateSender,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MojangResponse {
+    pub id: String,
+    pub name: String,
+    pub properties: Vec<MojangResponseProperties>
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq, Hash)]
+pub struct MojangResponseProperties {
+    pub name: String,
+    pub value: String,
+    pub signature: String,
 }
 
 #[derive(Debug)]
@@ -79,6 +98,7 @@ pub struct Player {
     pub position: Vector3<f64>,
     pub rotation: Vector2<f32>,
     pub verify_token: [u8; 64],
+    pub properties: Vec<MojangResponseProperties>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -95,6 +115,7 @@ pub struct ServerPlayer {
     pub position: Vector3<f64>,
     pub rotation: Vector2<f32>,
     pub on_ground: bool,
+    pub properties: Vec<MojangResponseProperties>,
 }
 
 impl PlayerKey {

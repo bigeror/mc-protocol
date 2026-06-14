@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Deref, sync::{Arc, LazyLock}};
 
-use crate::{create_packet_collection, concat_buffer, protocol::datatypes::PacketCreateError};
+use crate::{concat_buffer, create_packet_collection, protocol::datatypes::{MojangResponseProperties, PacketCreateError}};
 use crab_nbt::nbt;
 use json::{object, stringify};
 
@@ -37,11 +37,23 @@ create_packet_collection!(ConnectClientBound,
         buf verify_token,
         byte should_authenticate as u8,
     }?.concat())},
-    login_success: |username: Arc<str>, uuid: u128| {Ok(concat_buffer!{
+    login_success: |username: Arc<str>, uuid: u128, properties: Vec<MojangResponseProperties>| {Ok(concat_buffer!{
         byte 2,
         uuid uuid,
         str &username,
-        byte 0,
+        byte properties.len() as u8,
+        buf {
+            let mut output: Vec<u8> = vec![];
+            for property in properties {
+                output.extend(concat_buffer!(
+                    str &property.name,
+                    str &property.value,
+                    byte 1, // this string is optional
+                    str &property.signature
+                )?.concat());
+            }
+            output
+        },
     }?.concat())},
     plugin_message: | | {Ok(concat_buffer!{
         byte 1,

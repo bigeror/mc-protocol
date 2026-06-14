@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::{Arc, LazyLock}};
 use crab_nbt::nbt;
 use tokio::sync::{Mutex, mpsc::{self, UnboundedSender}};
 
-use crate::protocol::{datatypes::{Display, PlayerKey, ServerPlayer, Vector2, Vector3, SendPacket}, play::clientbound::CLIENT_BOUND_PACKETS};
+use crate::protocol::{datatypes::{Display, MojangResponseProperties, PlayerKey, SendPacket, ServerPlayer, Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS};
 use SendPacket::SendPacket as Packet;
 
 #[derive(Debug)]
@@ -21,6 +21,7 @@ pub enum Data {
         eid: i32,
         position: Vector3<f64>,
         rotation: Vector2<f32>,
+        properties: Vec<MojangResponseProperties>
     },
     RemovePlayer {player: PlayerKey },
     UpdatePosition {player_key: PlayerKey, position: Vector3<f64>, rotation: Vector2<f32>, on_ground: bool}
@@ -73,14 +74,15 @@ impl Server {
                 sender,
                 eid,
                 position,
-                rotation
+                rotation,
+                properties
             } => {
                 lock.players.insert(player.clone(),
-                    ServerPlayer { sender, position, rotation, eid, on_ground: false });
+                    ServerPlayer { sender, position, rotation, eid, on_ground: false, properties: properties });
 
                 let mut players = Vec::new();
                 for player in lock.players.iter() { players.push(
-                    PlayerKey { uuid: player.0.uuid, username: player.0.username.clone(), eid: player.0.eid }
+                    (PlayerKey { uuid: player.0.uuid, username: player.0.username.clone(), eid: player.0.eid }, player.1.properties.clone())
                 ) }
 
                 let player_name: &str = &player.username.clone();

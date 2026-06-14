@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 use tokio::sync::MutexGuard;
 
-use crate::{concat_buffer, create_packet_collection, datatypes::Packet, protocol::{datatypes::{PlayerKey, Vector2, Vector3}, server::world::World}};
+use crate::{concat_buffer, create_packet_collection, datatypes::Packet, protocol::{datatypes::{MojangResponseProperties, PlayerKey, Vector2, Vector3}, server::world::World}};
 
 create_packet_collection!(PlayClientBound,
     login: |eid: i32| {Ok(concat_buffer!{
@@ -28,14 +28,20 @@ create_packet_collection!(PlayClientBound,
         byte 0, // enforce secure chat
     }?.concat())},
 
-    player_info_update: |players: Vec<PlayerKey>| {Ok(concat_buffer!{
+    player_info_update: |players: Vec<(PlayerKey, Vec<MojangResponseProperties>)>| {Ok(concat_buffer!{
         byte 0x3F,
         byte 0x01 | 0x08, // Add player & Update listed
         varint players.len() as i32, // example server with only 1 player (1 item in array)
         buf {
             let mut output = Vec::new();
-            for player in players { output.extend(
-                concat_buffer!(uuid player.uuid, str &player.username, byte 0, byte 1)?
+            for (player, properties) in players { output.extend(
+                concat_buffer!(uuid player.uuid, str &player.username, byte properties.len() as u8, buf {
+                    let mut output = Vec::new();
+                    for property in properties {
+                        output.extend(concat_buffer!(str &property.name, str &property.value, byte 1, str &property.signature)?.concat());
+                    }
+                    output
+                }, byte 1)?
             ) }
             output.concat()
         },
