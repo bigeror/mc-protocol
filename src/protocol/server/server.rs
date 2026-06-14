@@ -2,7 +2,8 @@ use std::{collections::HashMap, sync::{Arc, LazyLock}};
 use crab_nbt::nbt;
 use tokio::sync::{Mutex, mpsc::{self, UnboundedSender}};
 
-use crate::protocol::{datatypes::{Display, PlayerKey, ServerPlayer, Vector2, Vector3}, play::clientbound::CLIENT_BOUND_PACKETS};
+use crate::protocol::{datatypes::{Display, PlayerKey, ServerPlayer, Vector2, Vector3, SendPacket}, play::clientbound::CLIENT_BOUND_PACKETS};
+use SendPacket::SendPacket as Packet;
 
 #[derive(Debug)]
 pub struct Server {
@@ -16,7 +17,7 @@ pub enum Data {
     Packet {data: Vec<u8>, filter: Option<PlayerKey>},
     AddPlayer {
         player: PlayerKey,
-        sender: UnboundedSender<Vec<u8>>,
+        sender: UnboundedSender<SendPacket>,
         eid: i32,
         position: Vector3<f64>,
         rotation: Vector2<f32>,
@@ -63,7 +64,7 @@ impl Server {
                     if let Some(filter_ptr) = filter.clone() {
                         if key == &filter_ptr {continue}
                     }
-                    _ = writer.send(data.clone());
+                    _ = writer.send(Packet(data.clone()));
                 };
             },
 

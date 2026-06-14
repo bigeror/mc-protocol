@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use tokio::time;
 
-use crate::datatypes::Packet;
+use crate::datatypes::Packet as SourcePacket;
 use crate::protocol::{
     datatypes::{Display, PlayerKey, ProtocolHandler, Vector2, Vector3},
     play::clientbound::CLIENT_BOUND_PACKETS,
@@ -15,7 +15,10 @@ use crate::protocol::{
     datatypes::RuntimeError
 };
 
-pub async fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+use crate::protocol::datatypes::SendPacket;
+use SendPacket::SendPacket as Packet;
+
+pub async fn play_responses(protocol: u8, packet: &mut SourcePacket, handler: &mut ProtocolHandler)
     -> Result<(), RuntimeError> {
     match protocol {
     0x1B => {
@@ -35,7 +38,7 @@ pub async fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut Pro
                 Ok(val) => val,
                 Err(e) => return
             };
-            _ = writer.send(response);
+            _ = writer.send(Packet(response));
         });
 
         Ok(())
@@ -73,10 +76,10 @@ pub async fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut Pro
 
         let player = handler.player.as_ref().ok_or(RuntimeError::UnexpectedNone)?;
 
-        _ = handler.writer.send([
+        _ = handler.writer.send(Packet([
             (CLIENT_BOUND_PACKETS.block_update)(0, position)?,
             (CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)?,
-        ].concat());
+        ].concat()));
 
         let response = [
             (CLIENT_BOUND_PACKETS.block_update)(0, position)?,
@@ -124,10 +127,10 @@ pub async fn play_responses(protocol: u8, packet: &mut Packet, handler: &mut Pro
         let mut world = WORLD.lock().await;
         world.replace_block(actual_pos, block_id);
 
-        _ = handler.writer.send([
+        _ = handler.writer.send(Packet([
             block_change.clone(),
             (CLIENT_BOUND_PACKETS.aknowledge_block_change)(sequence)?,
-        ].concat());
+        ].concat()));
 
         _ = SERVER.sender.send(Data::Packet { data: [
             block_change,

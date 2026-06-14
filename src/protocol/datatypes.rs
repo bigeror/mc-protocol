@@ -51,17 +51,20 @@ pub enum States {
 }
 
 #[derive(Debug)]
-pub struct EncryptedSender {
+pub enum SendPacket {
+    SendPacket(Vec<u8>),
+    LowPriority(Vec<u8>),
+    UpgradeSender(cfb8::Encryptor<aes::Aes128>),
+    TerminateSender,
 }
 
 #[derive(Debug)]
 pub struct ProtocolHandler {
     pub status: States,
     pub reader: OwnedReadHalf,
-    pub writer: mpsc::UnboundedSender<Vec<u8>>,
+    pub writer: mpsc::UnboundedSender<SendPacket>,
     pub protocol_version: i32,
     pub cipher: Option<Arc<Mutex<cfb8::Decryptor<aes::Aes128>>>>,
-    pub writer_upgrader: mpsc::Sender<cfb8::Encryptor<aes::Aes128>>,
     pub player: Option<Player>,
 }
 
@@ -87,7 +90,7 @@ pub struct PlayerKey {
 
 #[derive(Debug, Clone)]
 pub struct ServerPlayer {
-    pub sender: UnboundedSender<Vec<u8>>,
+    pub sender: UnboundedSender<SendPacket>,
     pub eid: i32,
     pub position: Vector3<f64>,
     pub rotation: Vector2<f32>,

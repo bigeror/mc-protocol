@@ -5,27 +5,30 @@ use crab_nbt::nbt;
 use rand::{Rng, random};
 use rsa::Pkcs1v15Encrypt;
 use tokio::sync::Mutex;
-use crate::{datatypes::Packet, protocol::{Player, States, cryptography::ENCRYPT_KEY_PAIR, datatypes::{Display, PlayerKey, ProtocolHandler,  RuntimeError, Vector2, Vector3}, initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{server::{Data, SERVER}, world::WORLD}}};
+use crate::{datatypes::Packet as SourcePacket, protocol::{Player, States, cryptography::ENCRYPT_KEY_PAIR, datatypes::{Display, PlayerKey, ProtocolHandler,  RuntimeError, Vector2, Vector3}, initialisation::clientbound::{CLIENT_BOUND_PACKETS, default_registry_data}, play::clientbound::CLIENT_BOUND_PACKETS as CLIENT_BOUND_PACKETS_PLAY, server::{server::{Data, SERVER}, world::WORLD}}};
 
-pub async fn status_response(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+use crate::protocol::datatypes::SendPacket;
+use SendPacket::SendPacket as Packet;
+
+pub async fn status_response(protocol: u8, packet: &mut SourcePacket, handler: &mut ProtocolHandler)
     -> Result<(), RuntimeError> {
     match protocol {
     0x00 => {
         let response = (CLIENT_BOUND_PACKETS.status.status_response)()?;
-        _ = handler.writer.send(response);
+        _ = handler.writer.send(Packet(response));
         Ok(())
     },
 
     0x01 => {
         let response = (CLIENT_BOUND_PACKETS.status.ping_response)(packet.decode_long()?)?;
-        _ = handler.writer.send(response);
+        _ = handler.writer.send(Packet(response));
         Ok(())
     },
     _ => Err(RuntimeError::IncorrectProtocol)
     }
 }
 
-pub async fn login_response(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+pub async fn login_response(protocol: u8, packet: &mut SourcePacket, handler: &mut ProtocolHandler)
     -> Result<(), RuntimeError> {
     match protocol {
     0x00 => {
@@ -53,7 +56,7 @@ pub async fn login_response(protocol: u8, packet: &mut Packet, handler: &mut Pro
             verify_token.to_vec(), false
         )?;
 
-        _ = handler.writer.send(response);
+        _ = handler.writer.send(Packet(response));
         Ok(())
     },
 
@@ -80,8 +83,8 @@ pub async fn login_response(protocol: u8, packet: &mut Packet, handler: &mut Pro
         // let hex = num_bigint::BigInt::from_signed_bytes_be(&hash).to_str_radix(16);
 
         // upgrade the sender
-        _ = handler.writer_upgrader.send(Encryptor::<aes::Aes128>::new_from_slices(&shared_secret, &shared_secret)
-            .map_err(|_| RuntimeError::IncorrectEncryptionResponse)?).await;
+        _ = handler.writer.send(SendPacket::UpgradeSender(Encryptor::<aes::Aes128>::new_from_slices(&shared_secret, &shared_secret)
+            .map_err(|_| RuntimeError::IncorrectEncryptionResponse)?));
 
         // save the decryptor to use afterwards
         handler.cipher = Some(Arc::new(Mutex::new(Decryptor::<aes::Aes128>::new_from_slices(&shared_secret, &shared_secret)
@@ -89,7 +92,7 @@ pub async fn login_response(protocol: u8, packet: &mut Packet, handler: &mut Pro
 
         let player = handler.player.clone().ok_or(RuntimeError::UnexpectedNone)?;
         let response = (CLIENT_BOUND_PACKETS.connect.login_success)(player.username, player.uuid)?;
-        _ = handler.writer.send(response);
+        _ = handler.writer.send(Packet(response));
         Ok(())
     },
 
@@ -101,7 +104,7 @@ pub async fn login_response(protocol: u8, packet: &mut Packet, handler: &mut Pro
     }
 }
 
-pub async fn configuration_response(protocol: u8, packet: &mut Packet, handler: &mut ProtocolHandler)
+pub async fn configuration_response(protocol: u8, packet: &mut SourcePacket, handler: &mut ProtocolHandler)
     -> Result<(), RuntimeError> {
     match protocol {
     0x00 => {
@@ -109,7 +112,7 @@ pub async fn configuration_response(protocol: u8, packet: &mut Packet, handler: 
             (CLIENT_BOUND_PACKETS.connect.plugin_message)()?,
             (CLIENT_BOUND_PACKETS.connect.send_datapacks)()?,
         ].concat();
-        _ = handler.writer.send(response);
+        _ = handler.writer.send(Packet(response));
         Ok(())
     },
 
@@ -118,7 +121,7 @@ pub async fn configuration_response(protocol: u8, packet: &mut Packet, handler: 
             default_registry_data()?,
             (CLIENT_BOUND_PACKETS.connect.configuration_finish)()?,
         ].concat();
-        _ = handler.writer.send(response);
+        _ = handler.writer.send(Packet(response));
         Ok(())
     },
 
@@ -164,7 +167,7 @@ pub async fn configuration_response(protocol: u8, packet: &mut Packet, handler: 
                 ]
             }).write_unnamed().to_vec(), false)?,
         ].concat();
-        _ = handler.writer.send(response);
+        _ = handler.writer.send(Packet(response));
         let cloned_writer = handler.writer.clone();
 
         tokio::spawn(async move {
@@ -181,12 +184,19 @@ pub async fn configuration_response(protocol: u8, packet: &mut Packet, handler: 
 
             for coordinate in coordinates {
                 let mut world = WORLD.lock().await;
-                _ = cloned_writer.send((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)
+                _ = cloned_writer.send(SendPacket::LowPriority((CLIENT_BOUND_PACKETS_PLAY.send_filled_chunk)
                     (Vector2 { x: coordinate.0, y: coordinate.1 }, &mut world)
-                    .expect("Couldn't construct filled chunk"));
+                    .expect("Couldn't construct filled chunk")));
             }
 
-            _ = cloned_writer.send((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(49).expect("Couldn't construct batch finish packet"));
+            _ = cloned_writer.send(SendPacket::LowPriority((CLIENT_BOUND_PACKETS_PLAY.chunk_batch_finish)(49).expect("Couldn't construct batch finish packet")));
+            _ = cloned_writer.send(SendPacket::LowPriority(
+            (CLIENT_BOUND_PACKETS_PLAY.teleport_player)(1,
+                player.position,
+                Vector3 { x: 0.0, y: 1.0, z: 0.0 },
+                player.rotation,
+                None
+            ).expect("Couldn't construct teleport packet")));
         });
 
         let writer = handler.writer.clone();
